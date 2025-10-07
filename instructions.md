@@ -22,13 +22,17 @@ university_admission_portal/
 ├── docker-compose.yml       # Main Docker Compose configuration
 ├── docker-compose.override.yml # Development-specific Docker overrides
 ├── docker-compose.prod.yml  # Production-specific Docker configuration
-├── init.sql                 # Database initialization script
 ├── scripts/
 │   ├── init.sh/init.bat     # Initialize the project
 │   ├── start.sh/start.bat   # Start the application
 │   ├── stop.sh/stop.bat     # Stop the application
 │   └── load-test.sh/load-test.bat # Run load tests
 └── ...
+```
+
+## Database Schema
+
+The database schema is defined using Prisma ORM in `backend/prisma/schema.prisma` and managed through Prisma migrations in `backend/prisma/migrations/`.
 ```
 
 ## Quick Start (Recommended)
@@ -107,10 +111,12 @@ docker-compose up -d
 ```
 
 This starts:
-- PostgreSQL database on port 5432
+- PostgreSQL database on port 5432 (schema applied via Prisma migrations, not init.sql)
 - Redis server on port 6379
 - Nginx reverse proxy on port 3000
 - MailHog for email testing on port 8025
+
+Note: Database schema is managed through Prisma migrations that are applied separately after the database container starts.
 
 ### 4. Set up Backend
 
@@ -235,16 +241,22 @@ npx prisma studio
 docker exec -it university_admission_db psql -U postgres -d admission_portal
 ```
 
-### Database Migrations
+### Database Setup and Migrations
 ```bash
-# Create a new migration
+# Run database migrations (creates tables based on schema.prisma)
 cd backend
-npx prisma migrate dev --name migration_name
+npx prisma migrate dev --name init
 
-# Apply pending migrations
-npx prisma db push
+# Generate Prisma client after schema changes
+npx prisma generate
 
-# Reset database to schema
+# Create a new migration after schema changes
+npx prisma migrate dev --name descriptive-migration-name
+
+# Apply pending migrations (in production)
+npx prisma migrate deploy
+
+# Reset database to schema (development only)
 npx prisma migrate reset
 ```
 
