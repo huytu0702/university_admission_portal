@@ -5,6 +5,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ConfigService } from '@nestjs/config';
 import { DocumentVerificationService } from '../documents/document-verification.service';
+import { EmailService } from '../email/email.service';
 
 export type CreateApplicationDto = {
   personalStatement?: string;
@@ -19,6 +20,7 @@ export class ApplicationsService {
     private prisma: PrismaService,
     private configService: ConfigService,
     private documentVerificationService: DocumentVerificationService,
+    private emailService: EmailService,
   ) {
     // Create upload directory if it doesn't exist
     this.uploadDir = this.configService.get<string>('UPLOAD_DIR', './uploads');
@@ -28,6 +30,19 @@ export class ApplicationsService {
   }
 
   async createApplication(userId: string, dto: CreateApplicationDto): Promise<Application> {
+    // Get user's email for sending confirmation
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true }
+    });
+
+    if (!user) {
+      throw new HttpException(
+        'User not found',
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
     // Validate files if provided
     const validatedFiles = dto.files && dto.files.length > 0
       ? await this.validateAndStoreFiles(dto.files)
@@ -41,6 +56,14 @@ export class ApplicationsService {
         status: 'submitted',
       },
     });
+
+    // Send application confirmation email
+    try {
+      await this.emailService.sendApplicationConfirmation(user.email, application.id);
+    } catch (error) {
+      console.error('Failed to send application confirmation email:', error);
+      // Don't fail the entire operation if email sending fails
+    }
 
     // Process uploaded files if any
     if (validatedFiles.length > 0) {
@@ -60,9 +83,20 @@ export class ApplicationsService {
       }
 
       // Update application status to reflect that documents have been verified
+      const updatedApplication = await this.prisma.application.update({
+        where: { id: application.id },
+        data: { 
+          status: 'verified',
+          progress: 50, // 50% progress after document verification
+        },
+      });
+    } else {
+      // Update application progress if no files were provided
       await this.prisma.application.update({
         where: { id: application.id },
-        data: { status: 'verified' },
+        data: { 
+          progress: 25, // 25% progress after just submission
+        },
       });
     }
 

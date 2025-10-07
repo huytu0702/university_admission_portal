@@ -2,6 +2,8 @@ import { Injectable, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, Application } from '../../generated/prisma';
 import { ConfigService } from '@nestjs/config';
+import { EmailService } from '../email/email.service';
+import { ApplicationStatus } from '../applications/application-status.service';
 
 export type PaymentIntentDto = {
   applicationId: string;
@@ -14,6 +16,7 @@ export class PaymentService {
   constructor(
     private prisma: PrismaService,
     private configService: ConfigService,
+    private emailService: EmailService,
   ) {}
 
   async createPaymentIntent(dto: PaymentIntentDto) {
@@ -51,7 +54,7 @@ export class PaymentService {
     // Update the application status to reflect payment processing
     await this.prisma.application.update({
       where: { id: applicationId },
-      data: { status: 'processing_payment' },
+      data: { status: ApplicationStatus.PROCESSING_PAYMENT },
     });
 
     return {
@@ -81,11 +84,30 @@ export class PaymentService {
       data: { status: 'succeeded' },
     });
 
-    // Update the application status to 'paid'
-    await this.prisma.application.update({
+    // Update the application status to 'completed' and set progress to 100%
+    const updatedApplication = await this.prisma.application.update({
       where: { id: payment.applicationId },
-      data: { status: 'paid' },
+      data: { 
+        status: ApplicationStatus.COMPLETED,
+        progress: 100, // 100% progress after payment
+      },
     });
+
+    // Send payment confirmation email
+    try {
+      // Get the user's email for the payment confirmation
+      const user = await this.prisma.user.findFirst({
+        where: { id: updatedApplication.userId },
+        select: { email: true }
+      });
+
+      if (user) {
+        await this.emailService.sendPaymentConfirmation(user.email, updatedApplication.id);
+      }
+    } catch (error) {
+      console.error('Failed to send payment confirmation email:', error);
+      // Don't fail the payment confirmation if email sending fails
+    }
 
     return updatedPayment;
   }
@@ -127,10 +149,29 @@ export class PaymentService {
           data: { status: 'succeeded' },
         });
 
-        await this.prisma.application.update({
+        const updatedApplication = await this.prisma.application.update({
           where: { id: payment.applicationId },
-          data: { status: 'paid' },
+          data: { 
+            status: ApplicationStatus.COMPLETED,
+            progress: 100, // 100% progress after payment
+          },
         });
+
+        // Send payment confirmation email
+        try {
+          // Get the user's email for the payment confirmation
+          const user = await this.prisma.user.findFirst({
+            where: { id: updatedApplication.userId },
+            select: { email: true }
+          });
+
+          if (user) {
+            await this.emailService.sendPaymentConfirmation(user.email, updatedApplication.id);
+          }
+        } catch (error) {
+          console.error('Failed to send payment confirmation email:', error);
+          // Don't fail the webhook processing if email sending fails
+        }
       }
     } else if (event.type === 'payment_intent.payment_failed') {
       const payment = await this.prisma.payment.findFirst({

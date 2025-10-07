@@ -4,8 +4,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
   directUrl = env("DIRECT_DATABASE_URL")
 }
 
@@ -28,8 +28,10 @@ model Application {
   personalStatement String?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
+  progress          Int               @default(0)
   user              User              @relation(fields: [userId], references: [id], onDelete: Cascade)
   applicationFiles  ApplicationFile[]
+  emails            Email[]
   payment           Payment?
 }
 
@@ -60,20 +62,23 @@ model Payment {
 }
 
 model Email {
-  id         String   @id @default(uuid())
-  toAddress  String   // email recipient
-  subject    String   // email subject
-  status     String   // sent, failed
-  sentAt     DateTime @default(now())
-  createdAt  DateTime @default(now())
+  id            String       @id @default(uuid())
+  toAddress     String
+  subject       String
+  status        String
+  sentAt        DateTime     @default(now())
+  createdAt     DateTime     @default(now())
+  applicationId String?
+  application   Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 }
 
 model Metric {
-  id       String   @id @default(uuid())
-  endpoint String   // API endpoint
-  method   String   // HTTP method
-  latency  Int      // Latency in milliseconds
-  userId   String?  // Optional user ID
+  id        String   @id @default(uuid())
+  endpoint  String
+  method    String
+  latency   Int
+  userId    String?
   timestamp DateTime @default(now())
+
   @@map("metrics")
 }

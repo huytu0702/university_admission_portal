@@ -8,6 +8,7 @@ export type EmailOptions = {
   subject: string;
   text?: string;
   html?: string;
+  applicationId?: string;  // Optional application ID to link the email
 };
 
 @Injectable()
@@ -50,19 +51,34 @@ export class EmailService {
       // Simulate the email sending with a 10% failure rate for demonstration
       const isSuccess = Math.random() > 0.1; // 90% success rate
 
-      if (isSuccess) {
-        // Log the email to the database for tracking purposes
-        await this.prisma.$executeRaw`INSERT INTO emails (to_address, subject, status, sent_at) VALUES (${options.to}, ${options.subject}, 'sent', NOW())`;
-        return true;
-      } else {
-        // Log the email to the database with a failed status
-        await this.prisma.$executeRaw`INSERT INTO emails (to_address, subject, status, sent_at) VALUES (${options.to}, ${options.subject}, 'failed', NOW())`;
-        return false;
-      }
+      // Create email record in database
+      await this.prisma.email.create({
+        data: {
+          toAddress: options.to,
+          subject: options.subject,
+          status: isSuccess ? 'sent' : 'failed',
+          applicationId: options.applicationId || null,  // Link to application if provided
+        }
+      });
+
+      return isSuccess;
     } catch (error) {
       console.error('Error sending email:', error);
+      
       // Log the email to the database with a failed status
-      await this.prisma.$executeRaw`INSERT INTO emails (to_address, subject, status, sent_at) VALUES (${options.to}, ${options.subject}, 'failed', NOW())`;
+      try {
+        await this.prisma.email.create({
+          data: {
+            toAddress: options.to,
+            subject: options.subject,
+            status: 'failed',
+            applicationId: options.applicationId || null,
+          }
+        });
+      } catch (dbError) {
+        console.error('Error logging failed email to database:', dbError);
+      }
+      
       return false;
     }
   }
@@ -80,6 +96,7 @@ export class EmailService {
       to: email,
       subject: 'Application Submitted Successfully',
       html: htmlContent,
+      applicationId,
     });
   }
 
@@ -96,6 +113,7 @@ export class EmailService {
       to: email,
       subject: 'Payment Confirmation',
       html: htmlContent,
+      applicationId,
     });
   }
 
@@ -112,6 +130,7 @@ export class EmailService {
       to: email,
       subject: `Application ${applicationId} Status Update`,
       html: htmlContent,
+      applicationId,
     });
   }
 }

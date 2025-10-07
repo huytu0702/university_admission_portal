@@ -4,9 +4,10 @@ import { PaymentController } from './payment.controller';
 import { PrismaService } from '../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import { ApplicationsModule } from '../applications/applications.module';
+import { EmailModule } from '../email/email.module';
 
 @Module({
-  imports: [ApplicationsModule],
+  imports: [ApplicationsModule, EmailModule],
   providers: [PaymentService, PrismaService, ConfigService],
   controllers: [PaymentController],
   exports: [PaymentService],

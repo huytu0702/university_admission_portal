@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '../../generated/prisma';
 import { Application } from '../../generated/prisma';
+import { EmailService } from '../email/email.service';
 
 export enum ApplicationStatus {
   SUBMITTED = 'submitted',
@@ -14,11 +15,26 @@ export enum ApplicationStatus {
 
 @Injectable()
 export class ApplicationStatusService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private emailService: EmailService,
+  ) {}
 
   async updateApplicationStatus(applicationId: string, status: ApplicationStatus, details?: string) {
+    // Get the application and user before updating status to get the email
+    const application = await this.prisma.application.findUnique({
+      where: { id: applicationId },
+      include: {
+        user: true
+      }
+    });
+
+    if (!application) {
+      throw new Error(`Application with ID ${applicationId} not found`);
+    }
+
     // Update the application status
-    const updatedApplication = await this.prisma.application.update({
+    let updatedApplication = await this.prisma.application.update({
       where: { id: applicationId },
       data: { 
         status,
@@ -26,14 +42,70 @@ export class ApplicationStatusService {
       },
     });
 
-    // Optionally, log status changes for tracking purposes
-    await this.prisma.application.update({
+    // Send status update email
+    try {
+      if (application.user.email) {
+        await this.emailService.sendApplicationStatusUpdate(
+          application.user.email, 
+          applicationId, 
+          status
+        );
+      }
+    } catch (error) {
+      console.error('Failed to send status update email:', error);
+      // Don't fail the status update if email sending fails
+    }
+
+    // If the status is COMPLETED, update the progress to 100%
+    if (status === ApplicationStatus.COMPLETED) {
+      updatedApplication = await this.prisma.application.update({
+        where: { id: applicationId },
+        data: { 
+          progress: 100,
+          updatedAt: new Date()
+        },
+      });
+    }
+
+    return updatedApplication;
+  }
+
+  async markApplicationAsComplete(applicationId: string) {
+    // Get the application and user before updating status to get the email
+    const application = await this.prisma.application.findUnique({
+      where: { id: applicationId },
+      include: {
+        user: true
+      }
+    });
+
+    if (!application) {
+      throw new Error(`Application with ID ${applicationId} not found`);
+    }
+
+    // Update the application status to completed and set progress to 100%
+    const updatedApplication = await this.prisma.application.update({
       where: { id: applicationId },
       data: { 
-        status: status,
+        status: ApplicationStatus.COMPLETED,
+        progress: 100, // 100% progress when completed
         updatedAt: new Date()
       },
     });
+
+    // Send status update email
+    try {
+      if (application.user.email) {
+        await this.emailService.sendApplicationStatusUpdate(
+          application.user.email, 
+          applicationId, 
+          ApplicationStatus.COMPLETED
+        );
+      }
+    } catch (error) {
+      console.error('Failed to send completion status email:', error);
+      // Don't fail the completion if email sending fails
+    }
 
     return updatedApplication;
   }
@@ -75,6 +147,12 @@ export class ApplicationStatusService {
       return 0;
     }
 
+    // If the application is completed, return 100% progress
+    if (application.status === ApplicationStatus.COMPLETED) {
+      return 100;
+    }
+
+    // Otherwise, calculate progress based on steps completed
     let progress = 0;
     const totalSteps = 4; // submitted, document verification, payment, completion
 
@@ -96,11 +174,7 @@ export class ApplicationStatusService {
       progress += 1;
     }
 
-    // Step 4: Application completed
-    if (application.status === ApplicationStatus.COMPLETED) {
-      progress += 1;
-    }
-
+    // Step 4: Application completed - would be handled above
     return Math.round((progress / totalSteps) * 100);
   }
 }
