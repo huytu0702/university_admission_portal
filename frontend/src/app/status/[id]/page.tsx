@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
-import { getApplication, getApplicationProgress } from '@/lib/api';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { getApplication, getApplicationProgress, fetchDocumentUrl } from '@/lib/api';
 
 export default function StatusPage() {
     const params = useParams();
@@ -13,6 +14,8 @@ export default function StatusPage() {
     const [progress, setProgress] = useState(0);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
+    const [selectedDocument, setSelectedDocument] = useState<{ file: any; url: string } | null>(null);
+    const [documentLoading, setDocumentLoading] = useState(false);
 
     useEffect(() => {
         if (id) {
@@ -50,6 +53,23 @@ export default function StatusPage() {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleDocumentClick = async (file: any) => {
+        setDocumentLoading(true);
+        const url = await fetchDocumentUrl(id, file.id);
+        if (url) {
+            setSelectedDocument({ file, url });
+        }
+        setDocumentLoading(false);
+    };
+
+    const closeModal = () => {
+        if (selectedDocument?.url) {
+            // Revoke the blob URL to free up memory
+            URL.revokeObjectURL(selectedDocument.url);
+        }
+        setSelectedDocument(null);
     };
 
     if (loading) {
@@ -215,7 +235,11 @@ export default function StatusPage() {
                                 <h3 className="text-lg font-medium mb-4">Uploaded Documents</h3>
                                 <div className="space-y-3">
                                     {application.applicationFiles.map((file: any, index: number) => (
-                                        <div key={file.id || index} className="bg-gray-50 p-4 rounded-lg flex items-center justify-between">
+                                        <div 
+                                            key={file.id || index} 
+                                            className="bg-gray-50 p-4 rounded-lg flex items-center justify-between cursor-pointer hover:bg-gray-100 transition-colors"
+                                            onClick={() => handleDocumentClick(file)}
+                                        >
                                             <div className="flex items-center space-x-3">
                                                 <div className="bg-blue-100 p-2 rounded">
                                                     <svg className="w-6 h-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -293,6 +317,57 @@ export default function StatusPage() {
                                             : 'Your application status has been updated. Please check back for more information.'}
                             </p>
                         </div>
+
+                        {/* Document Preview Modal */}
+                        <Dialog open={!!selectedDocument} onOpenChange={closeModal}>
+                            <DialogContent className="max-w-4xl max-h-[90vh] w-full">
+                                <DialogHeader>
+                                    <DialogTitle>{selectedDocument?.file.fileName}</DialogTitle>
+                                </DialogHeader>
+                                <div className="max-h-[70vh] overflow-auto">
+                                    {documentLoading ? (
+                                        <div className="flex items-center justify-center h-[60vh]">
+                                            <div className="text-center">
+                                                <div className="inline-block animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
+                                                <p className="text-gray-600">Loading document...</p>
+                                            </div>
+                                        </div>
+                                    ) : selectedDocument ? (
+                                        <>
+                                            {selectedDocument.file.fileType.startsWith('image/') ? (
+                                                <img 
+                                                    src={selectedDocument.url} 
+                                                    alt={selectedDocument.file.fileName} 
+                                                    className="max-w-full max-h-[60vh] object-contain mx-auto"
+                                                />
+                                            ) : selectedDocument.file.fileType === 'application/pdf' ? (
+                                                <iframe 
+                                                    src={selectedDocument.url} 
+                                                    className="w-full h-[60vh] border-0"
+                                                    title={selectedDocument.file.fileName}
+                                                />
+                                            ) : (
+                                                <div className="flex flex-col items-center justify-center p-8 text-center">
+                                                    <svg className="w-16 h-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                                                    </svg>
+                                                    <p className="text-lg font-medium text-gray-900 mb-2">Document Preview Not Available</p>
+                                                    <p className="text-gray-600">The document format ({selectedDocument.file.fileType}) cannot be previewed in the browser.</p>
+                                                    <a 
+                                                        href={selectedDocument.url} 
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer"
+                                                        className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                                                    >
+                                                        Download Document
+                                                    </a>
+                                                </div>
+                                            )}
+                                        </>
+                                    ) : null}
+                                </div>
+                            </DialogContent>
+                        </Dialog>
                     </CardContent>
                 </Card>
             </div>

@@ -119,3 +119,35 @@ export const getAllApplications = async () => {
 
   return response;
 };
+
+export const getDocumentUrl = (applicationId: string, fileId: string): string => {
+  const apiUrl = getApiUrl();
+  const token = localStorage.getItem('token');
+  // We'll handle the authentication differently - see the fetchDocumentUrl function
+  return `${apiUrl}/applications/${applicationId}/files/${fileId}`;
+};
+
+export const fetchDocumentUrl = async (applicationId: string, fileId: string): Promise<string | null> => {
+  const apiUrl = getApiUrl();
+  
+  try {
+    const response = await fetch(`${apiUrl}/applications/${applicationId}/files/${fileId}`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${localStorage.getItem('token') || ''}`,
+      },
+    });
+    
+    if (response.ok) {
+      // Create a blob URL for the document
+      const blob = await response.blob();
+      return URL.createObjectURL(blob);
+    } else {
+      console.error(`Failed to fetch document: ${response.status} ${response.statusText}`);
+      return null;
+    }
+  } catch (error) {
+    console.error('Error fetching document:', error);
+    return null;
+  }
+};
