@@ -42,14 +42,13 @@ This project implements a university admission portal where applicants can regis
 ### Enhanced Patterns (Implemented Separately)
 1. **Queue-Based Load Leveling** - Offload work to background processors
 2. **Competing Consumers** - Scale worker pools horizontally
-3. **Priority Queues** - Process high-priority applications first
-4. **Cache-Aside** - Reduce database load with caching
-5. **Idempotency** - Ensure reliable message processing
-6. **Retry with Backoff & DLQ** - Handle transient failures gracefully
-7. **Circuit Breaker** - Prevent cascade failures
-8. **Bulkhead Isolation** - Limit resource consumption
-9. **Outbox Pattern** - Guarantee message delivery
-10. **CQRS-lite** - Optimize read-heavy operations
+3. **Cache-Aside** - Reduce database load with caching
+4. **Idempotency** - Ensure reliable message processing
+5. **Retry with Backoff & DLQ** - Handle transient failures gracefully
+6. **Circuit Breaker** - Prevent cascade failures
+7. **Bulkhead Isolation** - Limit resource consumption
+8. **Outbox Pattern** - Guarantee message delivery
+9. **CQRS-lite** - Optimize read-heavy operations
 
 ## Getting Started
 

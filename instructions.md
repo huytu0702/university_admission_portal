@@ -364,14 +364,13 @@ cd backend && rm -rf dist/ && cd ../frontend && rm -rf .next/ && cd ..
 
 1. **Queue-Based Load Leveling**: Background processing with BullMQ
 2. **Competing Consumers**: Scalable worker pools
-3. **Priority Queues**: VIP vs normal vs bulk job processing
-4. **Cache-Aside**: Redis caching for performance
-5. **Idempotency**: Prevent duplicate requests
-6. **Retry with Backoff**: Handle transient failures
-7. **Circuit Breaker**: Protect downstream services
-8. **Bulkhead Isolation**: Resource isolation
-9. **Outbox Pattern**: Reliable message delivery
-10. **CQRS-lite**: Optimized read operations
+3. **Cache-Aside**: Redis caching for performance
+4. **Idempotency**: Prevent duplicate requests
+5. **Retry with Backoff**: Handle transient failures
+6. **Circuit Breaker**: Protect downstream services
+7. **Bulkhead Isolation**: Resource isolation
+8. **Outbox Pattern**: Reliable message delivery
+9. **CQRS-lite**: Optimized read operations
 
 ### Application Flow
 

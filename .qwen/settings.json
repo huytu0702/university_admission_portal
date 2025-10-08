@@ -1,13 +1,11 @@
 {
     "mcpServers": {
         "context7": {
-            "command": "docker",
-            "args": [
-                "run",
-                "-i",
-                "--rm",
-                "mcp/context7"
-            ]
+            "httpUrl": "https://mcp.context7.com/mcp",
+            "headers": {
+                "CONTEXT7_API_KEY": "ctx7sk-d756433a-6b69-4804-ae62-fd5d47093d2b",
+                "Accept": "application/json, text/event-stream"
+            }
         }
     }
 }

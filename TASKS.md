@@ -215,7 +215,7 @@ Development tasks for the University Admission Portal with Before/After design p
 ---
 
 ## Milestone 4: Performance Pack
-**Goal:** Implement scaling and prioritization patterns
+**Goal:** Implement scaling patterns
 
 ### Competing Consumers
 - [ ] Implement dynamic worker scaling
@@ -224,14 +224,6 @@ Development tasks for the University Admission Portal with Before/After design p
 - [ ] Configure worker concurrency settings
 - [ ] Implement worker load balancing
 - [ ] Add worker performance metrics
-
-### Priority Queue Implementation
-- [ ] Add priority field to job schema
-- [ ] Implement priority levels (VIP=1, NORMAL=5, BULK=10)
-- [ ] Create priority-based dequeuing
-- [ ] Add priority configuration in admin
-- [ ] Implement priority escalation logic
-- [ ] Create priority metrics tracking
 
 ### Worker Pool Configuration
 - [ ] Create configurable worker pools

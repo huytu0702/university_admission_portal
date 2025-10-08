@@ -3,7 +3,7 @@
 ## 1) Vision
 
 * Build a minimal **online admission portal** where applicants submit an application, are **redirected to payment immediately after submit**, and can track processing status. Admins can **toggle design patterns/quality attributes** to compare **Before (baseline)** vs **After (improved)** behavior. 
-* Mandatory improvement: **Queue-Based Load Leveling**; optional flags: **Competing Consumers, Priority Queue, Cache-Aside, Idempotency, Retry + Backoff + DLQ, Circuit Breaker, Bulkhead, Outbox, CQRS-lite**. Target outcomes include **202 Accepted** for submit during bursts, linear throughput scaling with workers, lower transient errors, and clear status UX. 
+* Mandatory improvement: **Queue-Based Load Leveling**; optional flags: **Competing Consumers, Cache-Aside, Idempotency, Retry + Backoff + DLQ, Circuit Breaker, Bulkhead, Outbox, CQRS-lite**. Target outcomes include **202 Accepted** for submit during bursts, linear throughput scaling with workers, lower transient errors, and clear status UX. 
 
 ## 2) Architecture (Baseline → After)
 
@@ -21,7 +21,7 @@
 **Key architectural properties to demo (Before vs After):**
 
 * Submit latency: **p95 ~100–200ms (202 Accepted)** vs multi-second synchronous. 
-* Throughput scales with worker count; retries/DLQ cut transient failures; priority queue enforces VIP SLAs; dashboards visualize metrics. 
+* Throughput scales with worker count; retries/DLQ cut transient failures; dashboards visualize metrics. 
 
 ## 3) Technology Stack
 
@@ -37,7 +37,7 @@
 ### 3.3 Patterns (Feature-flagged)
 
 * **Required:** Queue-Based Load Leveling (BullMQ/Redis) with **202 Accepted** submit contract. 
-* **Optional flags:** Competing Consumers, Priority Queue, Cache-Aside, Idempotency Key, Retry+Backoff+DLQ, Circuit Breaker (payment), Bulkhead, **Outbox**, **CQRS-lite**. 
+* **Optional flags:** Competing Consumers, Cache-Aside, Idempotency Key, Retry+Backoff+DLQ, Circuit Breaker (payment), Bulkhead, **Outbox**, **CQRS-lite**. 
 
 ### 3.4 Observability & Benchmarks
 
@@ -51,7 +51,7 @@
 * **Backend:** NestJS (REST, feature flags, DLQ console endpoints). 
 * **Frontend:** Next.js 15 + shadcn; admin dashboard for toggles/metrics; status stepper and real-time feel (polling 1s).  
 * **Observability:** OTEL traces, logs, latency/throughput dashboards; comparison views Before/After. (KPIs outlined in PRD)  
-* **Testing/Load:** k6/Locust for spikes; scenario matrix: Baseline → Queue → +Idempotency → +Retry/DLQ → +Circuit/Bulkhead → +Priority → +Cache. 
+* **Testing/Load:** k6/Locust for spikes; scenario matrix: Baseline → Queue → +Idempotency → +Retry/DLQ → +Circuit/Bulkhead → +Cache. 
 * **Security & UX:** MIME/size validation, basic rate limiting; immediate **redirect to payment** after accepted submit.  
 
 ---

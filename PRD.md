@@ -6,7 +6,7 @@
 
 ## 0. Tóm tắt điều hành (Executive Summary)
 - **Bối cảnh:** Người dùng (thí sinh) nộp hồ sơ online, trả phí, theo dõi trạng thái duyệt. Giai đoạn sát deadline (23:59 ngày cuối cùng) lưu lượng tăng đột biến (burst), hệ thống baseline dễ nghẽn.
-- **Định hướng cải tiến:** Áp dụng **Queue-Based Load Leveling** (bắt buộc) và các pattern: **Competing Consumers, Priority Queue, Cache-Aside (Redis), Idempotency Key, Retry + Exponential Backoff + DLQ, Circuit Breaker, Bulkhead, Outbox, CQRS (mức nhẹ)**.
+- **Định hướng cải tiến:** Áp dụng **Queue-Based Load Leveling** (bắt buộc) và các pattern: **Competing Consumers, Cache-Aside (Redis), Idempotency Key, Retry + Exponential Backoff + DLQ, Circuit Breaker, Bulkhead, Outbox, CQRS (mức nhẹ)**.
 - **Kết quả kỳ vọng:**
   - API nộp hồ sơ phản hồi **202 Accepted** dưới 200ms ở p95 khi burst.
   - **Thông lượng** (jobs/min) tăng tuyến tính theo số worker.
@@ -55,7 +55,7 @@
 
 ### 3.2 Admin (So sánh Before/After)
 - **Feature Flags** bật/tắt theo nhóm:
-  - Queue-Based Load Leveling (bắt buộc luôn ON trong chế độ After), Competing Consumers, Priority Queue, Cache-Aside, Idempotency Key, Retry+Backoff+DLQ, Circuit Breaker, Bulkhead, Outbox, CQRS (nhẹ).
+  - Queue-Based Load Leveling (bắt buộc luôn ON trong chế độ After), Competing Consumers, Cache-Aside, Idempotency Key, Retry+Backoff+DLQ, Circuit Breaker, Bulkhead, Outbox, CQRS (nhẹ).
 - **Cấu hình**: số worker theo pool, ngưỡng circuit breaker, thông số retry/backoff, mức ưu tiên.
 - **Dashboard so sánh**: bảng & biểu đồ Before vs After cho latency p95, throughput jobs/min, error rate, queue depth, cache hit; chọn khoảng thời gian.
 - **DLQ Console**: xem, requeue, purge cơ bản (demo).
@@ -125,7 +125,6 @@ G -->|GET metrics| C
 | Latency submit | p95 > 3–10s khi burst | p95 ~ 100–200ms (202 Accepted) |
 | Throughput | Bị ràng buộc bởi 1 tiến trình | Tăng tuyến tính theo worker |
 | Error tạm thời | Cao | Retry+DLQ giảm mạnh |
-| Ưu tiên | Không có | Priority Queue đảm bảo SLA |
 | Quan sát | Thiếu số đo | Dashboard so sánh Before/After |
 
 ## 6. Design Patterns & Cấu hình Design Patterns & Cấu hình
@@ -136,7 +135,6 @@ G -->|GET metrics| C
 
 ### 6.2 Tuỳ chọn (Feature Flags)
 - **Competing Consumers:** `workers.verify = N`, `workers.payment = M`, `workers.email = K`.
-- **Priority Queue:** `priority: VIP(1) < NORMAL(5) < BULK(10)` (số nhỏ ưu tiên cao).
 - **Cache-Aside:** TTL 10 phút cho danh mục ngành, khung lệ phí, config kỳ tuyển sinh.
 - **Idempotency Key:** header `Idempotency-Key` (UUID); lưu trong DB/Redis 24h.
 - **Retry + Exponential Backoff:** `retries=5`, `base=2s`, `max=60s`; DLQ topic riêng.
@@ -168,13 +166,13 @@ Wp->>Q: enqueue(send_email)
 ```
 
 ### 7.2 Trạng thái hồ sơ
-- `GET /applications/{id}` trả về: `status`, `progress` (%), `steps` (list), `last_updated`, `issues` (nếu có), `retry_count`, `priority`.
+- `GET /applications/{id}` trả về: `status`, `progress` (%), `steps` (list), `last_updated`, `issues` (nếu có), `retry_count`.
 - UI polling mỗi 1s (hoặc WebSocket / SSE khi có thời gian).
 
 ---
 
 ## 8. Mô hình dữ liệu (rút gọn)
-- `applications(id, user_id, program_id, status, priority, created_at, updated_at)`
+- `applications(id, user_id, program_id, status, created_at, updated_at)`
 - `application_files(id, application_id, url, checksum, size, virus_scanned, created_at)`
 - `payments(id, application_id, amount, currency, status, provider_ref, created_at, updated_at)`
 - `outbox(id, aggregate_id, type, payload_json, status, created_at)`
@@ -219,7 +217,7 @@ Wp->>Q: enqueue(send_email)
 ## 12. Thử nghiệm & Đánh giá trước/sau
 ### 12.1 Checklist Thí nghiệm
 - [ ] Baseline “đồng bộ” bật (tắt queue & pattern) → chạy kịch bản spike.
-- [ ] Improved bật lần lượt: queue → idempotency → retry/DLQ → circuit → bulkhead → outbox → priority → cache.
+- [ ] Improved bật lần lượt: queue → idempotency → retry/DLQ → circuit → bulkhead → outbox → cache.
 - [ ] Ghi số đo vào bảng so sánh.
 
 ### 12.2 Bảng số đo mẫu
@@ -229,7 +227,6 @@ Wp->>Q: enqueue(send_email)
 | Queue only | 180 ms | 450 | 4.1% | 12 s | 202 Accepted ổn |
 | + Retry/DLQ | 185 ms | 470 | 1.5% | 13 s | Lỗi tạm thời giảm |
 | + Circuit/Bulkhead | 190 ms | 480 | 0.9% | 12 s | Cô lập payment |
-| + Priority | 195 ms | 480 | 0.9% | 12 s | VIP SLA giữ vững |
 | + Cache | 120 ms | 490 | 0.9% | 11 s | Đọc cấu hình nhanh |
 
 ---
@@ -245,7 +242,7 @@ Wp->>Q: enqueue(send_email)
 1) **MVP Baseline (Applicant only)**: Auth, submit đồng bộ, payment mock, email đồng bộ, đo baseline.
 2) **Admin Flags + Queue Core**: Trang Admin bật/tắt flags; enable 202 Accepted + Outbox + BullMQ; status tracking.
 3) **Reliability Pack**: Retry/Backoff/DLQ, Circuit Breaker, Bulkhead; DLQ console.
-4) **Performance Pack**: Competing Consumers, Priority Queue; biểu đồ Before/After.
+4) **Performance Pack**: Competing Consumers; biểu đồ Before/After.
 5) **Read UX & Cache**: Cache-Aside, bảng view (CQRS nhẹ), tối ưu GET status.
 6) **Benchmark & Report**: chạy spike test, xuất bảng so sánh.
 
