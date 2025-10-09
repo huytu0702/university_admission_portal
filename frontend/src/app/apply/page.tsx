@@ -217,7 +217,7 @@ export default function ApplicationForm() {
 
           // Redirect to the payment page after successful submission
           alert('Application submitted successfully! Please proceed with payment.');
-          router.push(`/payment/${result.id}`);
+          router.push(`/payment/${result.applicationId}`);
         } else {
           const errorData = await response.json();
 

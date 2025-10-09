@@ -23,7 +23,8 @@
   "author": "University Admission Portal Team",
   "license": "MIT",
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "k6": "^0.0.0"
   },
   "engines": {
     "node": ">=18.0.0"

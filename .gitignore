@@ -175,3 +175,6 @@ backend/test-reports/
 backend/.nestjs/
 backend/.nyc_output/
 backend/coverage/lcov-report/
+
+k6-v0.48.0-windows-amd64
+k6-v0.48.0-windows-amd64.zip

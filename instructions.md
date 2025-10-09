@@ -410,3 +410,6 @@ If you encounter issues not covered in this document:
 2. Review the detailed documentation in the `docs/` directory
 3. Contact the project maintainers
 4. Create an issue in the repository with detailed information about your problem
+
+
+admin@example.com admin123

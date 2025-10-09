@@ -29,7 +29,7 @@ export class ApplicationsService {
     }
   }
 
-  async createApplication(userId: string, dto: CreateApplicationDto): Promise<Application> {
+  async createApplication(userId: string, dto: CreateApplicationDto) {
     // Get user's email for sending confirmation
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -49,58 +49,63 @@ export class ApplicationsService {
       : [];
 
     // Create the application with initial status
-    const application = await this.prisma.application.create({
-      data: {
-        userId,
-        personalStatement: dto.personalStatement,
-        status: 'submitted',
-      },
-    });
+    const application = await this.prisma.$transaction(async (tx) => {
+      // Create the application
+      const newApplication = await tx.application.create({
+        data: {
+          userId,
+          personalStatement: dto.personalStatement,
+          status: 'submitted',
+        },
+      });
 
-    // Send application confirmation email
-    try {
-      await this.emailService.sendApplicationConfirmation(user.email, application.id);
-    } catch (error) {
-      console.error('Failed to send application confirmation email:', error);
-      // Don't fail the entire operation if email sending fails
-    }
-
-    // Process uploaded files if any
-    if (validatedFiles.length > 0) {
-      for (const file of validatedFiles) {
-        const applicationFile = await this.prisma.applicationFile.create({
-          data: {
-            applicationId: application.id,
-            fileName: file.originalName,
-            fileType: file.mimeType,
-            fileSize: file.size,
-            filePath: file.path, // Path where the file is stored
-          },
-        });
-
-        // Synchronously verify the document after it's saved
-        await this.documentVerificationService.verifyDocument(applicationFile.id);
+      // Create application files if any
+      if (validatedFiles.length > 0) {
+        for (const file of validatedFiles) {
+          await tx.applicationFile.create({
+            data: {
+              applicationId: newApplication.id,
+              fileName: file.originalName,
+              fileType: file.mimeType,
+              fileSize: file.size,
+              filePath: file.path, // Path where the file is stored
+            },
+          });
+        }
       }
 
-      // Update application status to reflect that documents have been verified
-      const updatedApplication = await this.prisma.application.update({
-        where: { id: application.id },
-        data: { 
-          status: 'verified',
-          progress: 50, // 50% progress after document verification
-        },
-      });
-    } else {
-      // Update application progress if no files were provided
-      await this.prisma.application.update({
-        where: { id: application.id },
-        data: { 
-          progress: 25, // 25% progress after just submission
-        },
-      });
-    }
+      // Create outbox message for document verification
+      if (validatedFiles.length > 0) {
+        await tx.outbox.create({
+          data: {
+            eventType: 'document_uploaded',
+            payload: JSON.stringify({
+              applicationId: newApplication.id,
+              applicationFileIds: validatedFiles.map(f => f.path), // Store file paths for processing
+            }),
+          },
+        });
+      }
 
-    return application;
+      // Create outbox message for payment processing
+      await tx.outbox.create({
+        data: {
+          eventType: 'application_submitted',
+          payload: JSON.stringify({
+            applicationId: newApplication.id,
+          }),
+        },
+      });
+
+      return newApplication;
+    });
+
+    // Return information needed for the client instead of the application object
+    return {
+      applicationId: application.id,
+      statusUrl: `/applications/${application.id}/status`,
+      payUrl: `/payments/checkout/${application.id}`,
+    };
   }
 
   private async validateAndStoreFiles(files: Array<import('multer').File>): Promise<Array<{

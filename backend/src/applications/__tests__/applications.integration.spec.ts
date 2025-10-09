@@ -75,11 +75,11 @@ describe('ApplicationsController (integration)', () => {
         .set('Authorization', `Bearer ${accessToken}`)
         .field('personalStatement', applicationData.personalStatement)
         // .attach('files', mockFile.buffer, mockFile.originalname) // Proper file attachment
-        .expect(201)
+        .expect(202)
         .expect((res) => {
-          expect(res.body).toHaveProperty('id');
-          expect(res.body).toHaveProperty('status', 'submitted');
-          expect(res.body).toHaveProperty('personalStatement', applicationData.personalStatement);
+          expect(res.body).toHaveProperty('applicationId');
+          expect(res.body).toHaveProperty('statusUrl');
+          expect(res.body).toHaveProperty('payUrl');
         });
     });
 

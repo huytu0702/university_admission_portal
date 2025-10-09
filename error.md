@@ -1,11 +1,13 @@
-src/applications/applications.controller.ts:18:15 - error TS2300: Duplicate identifier 'Response'.
+[9:04:32 PM] Starting compilation in watch mode...
 
-18 import type { Response } from 'express';
-                 ~~~~~~~~
+src/payments-mock/payment.controller.ts:89:17 - error TS2304: Cannot find name 'HttpException'.
 
-src/applications/applications.controller.ts:26:10 - error TS2300: Duplicate identifier 'Response'.
+89       throw new HttpException('Invalid payment intent ID', HttpStatus.BAD_REQUEST);
+                   ~~~~~~~~~~~~~
 
-26 import { Response } from 'express';
-            ~~~~~~~~
+src/payments-mock/payment.controller.ts:105:17 - error TS2304: Cannot find name 'HttpException'.
 
-[11:02:02 PM] Found 2 errors. Watching for file changes.
+105       throw new HttpException('Invalid payment intent ID', HttpStatus.BAD_REQUEST);
+                    ~~~~~~~~~~~~~
+
+[9:04:36 PM] Found 2 errors. Watching for file changes.

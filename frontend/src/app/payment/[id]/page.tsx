@@ -60,6 +60,12 @@ export default function PaymentPage() {
       if (response.ok) {
         const paymentData = await response.json();
 
+        // Verify that paymentData and paymentIntentId exist before proceeding
+        if (!paymentData || !paymentData.paymentIntentId) {
+          setError('Failed to create payment intent: missing paymentIntentId');
+          return;
+        }
+
         // Since this is a mock payment, automatically confirm the payment
         const confirmResponse = await confirmPayment(paymentData.paymentIntentId);
 

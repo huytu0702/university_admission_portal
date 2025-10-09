@@ -51,7 +51,7 @@ export class ApplicationsController {
   @ApiBearerAuth()
   @ApiConsumes('multipart/form-data')
   @ApiBody({ type: CreateApplicationDto })
-  @ApiResponse({ status: 201, description: 'Application created successfully' })
+  @ApiResponse({ status: 202, description: 'Application accepted for processing' })
   @ApiResponse({ status: 400, description: 'Bad request - validation failed' })
   @ApiResponse({ status: 401, description: 'Unauthorized - invalid token' })
   @ApiResponse({ status: 413, description: 'Payload too large - file size exceeds limit' })

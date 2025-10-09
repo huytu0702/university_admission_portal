@@ -72,6 +72,14 @@ model Email {
   application   Application? @relation(fields: [applicationId], references: [id], onDelete: Cascade)
 }
 
+model Outbox {
+  id         String   @id @default(uuid())
+  eventType  String
+  payload    String   // JSON string
+  processedAt DateTime?
+  createdAt  DateTime @default(now())
+}
+
 model Metric {
   id        String   @id @default(uuid())
   endpoint  String
@@ -81,4 +89,13 @@ model Metric {
   timestamp DateTime @default(now())
 
   @@map("metrics")
+}
+
+model FeatureFlag {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  enabled     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

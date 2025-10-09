@@ -9,6 +9,7 @@ import {
   HttpCode,
   HttpStatus,
   Req,
+  HttpException,
 } from '@nestjs/common';
 import { PaymentService, PaymentIntentDto } from './payment.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -84,6 +85,10 @@ export class PaymentController {
   async confirmPayment(
     @Param('paymentIntentId') paymentIntentId: string,
   ) {
+    if (!paymentIntentId || paymentIntentId === 'undefined') {
+      // In case of undefined paymentIntentId in URL, return a specific error
+      throw new HttpException('Invalid payment intent ID', HttpStatus.BAD_REQUEST);
+    }
     return this.paymentService.confirmPayment(paymentIntentId);
   }
 
@@ -96,6 +101,10 @@ export class PaymentController {
   async getPaymentStatus(
     @Param('paymentIntentId') paymentIntentId: string,
   ) {
+    if (!paymentIntentId || paymentIntentId === 'undefined') {
+      // In case of undefined paymentIntentId in URL, return a specific error
+      throw new HttpException('Invalid payment intent ID', HttpStatus.BAD_REQUEST);
+    }
     return this.paymentService.getPaymentStatus(paymentIntentId);
   }
 

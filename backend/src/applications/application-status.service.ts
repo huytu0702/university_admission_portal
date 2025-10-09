@@ -6,8 +6,11 @@ import { EmailService } from '../email/email.service';
 
 export enum ApplicationStatus {
   SUBMITTED = 'submitted',
+  VERIFYING = 'verifying',
   VERIFIED = 'verified',
+  VERIFICATION_FAILED = 'verification_failed',
   PROCESSING_PAYMENT = 'processing_payment',
+  PAYMENT_FAILED = 'payment_failed',
   PAID = 'paid',
   COMPLETED = 'completed',
   REJECTED = 'rejected',
@@ -113,10 +116,26 @@ export class ApplicationStatusService {
   async getApplicationStatus(applicationId: string) {
     const application = await this.prisma.application.findUnique({
       where: { id: applicationId },
-      select: { status: true, updatedAt: true }
+      select: { 
+        id: true,
+        status: true, 
+        progress: true,
+        createdAt: true,
+        updatedAt: true
+      }
     });
 
-    return application;
+    if (!application) {
+      return null;
+    }
+
+    return {
+      id: application.id,
+      status: application.status,
+      progress: application.progress,
+      createdAt: application.createdAt,
+      updatedAt: application.updatedAt,
+    };
   }
 
   async getAllApplicationStatuses(userId: string) {

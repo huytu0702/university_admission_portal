@@ -31,25 +31,52 @@ export class PaymentService {
       throw new HttpException('Application not found', HttpStatus.NOT_FOUND);
     }
 
-    // In a real implementation, you would call a payment provider (e.g., Stripe)
-    // For this mock implementation, we'll simulate the payment creation
-    const paymentIntentId = `pi_mock_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    // Payment URL - in a real implementation this would be provided by the payment provider
-    const paymentUrl = `${this.configService.get('CLIENT_URL', 'http://localhost:3000')}/payment/${paymentIntentId}`;
-    
-    // Create the payment record in the database
-    const payment = await this.prisma.payment.create({
-      data: {
-        applicationId: applicationId,
-        paymentIntentId,
-        amount,
-        currency: currency || 'usd',
-        status: 'pending',
-        paymentUrl,
-        provider: 'mock',
-      },
+    // Check if a payment already exists for this application
+    let payment = await this.prisma.payment.findUnique({
+      where: { applicationId },
     });
+
+    if (payment) {
+      // If payment already exists, update it instead of creating a new one
+      // This handles scenarios where a user might try to pay again
+      const paymentIntentId = `pi_mock_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const paymentUrl = `${this.configService.get('CLIENT_URL', 'http://localhost:3000')}/payment/${paymentIntentId}`;
+      
+      payment = await this.prisma.payment.update({
+        where: { 
+          id: payment.id 
+        },
+        data: {
+          amount,
+          currency: currency || 'usd',
+          status: 'pending',
+          paymentIntentId: paymentIntentId,
+          paymentUrl: paymentUrl,
+          provider: 'mock',
+          updatedAt: new Date(), // Update the timestamp
+        },
+      });
+    } else {
+      // In a real implementation, you would call a payment provider (e.g., Stripe)
+      // For this mock implementation, we'll simulate the payment creation
+      const paymentIntentId = `pi_mock_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      // Payment URL - in a real implementation this would be provided by the payment provider
+      const paymentUrl = `${this.configService.get('CLIENT_URL', 'http://localhost:3000')}/payment/${paymentIntentId}`;
+      
+      // Create the payment record in the database
+      payment = await this.prisma.payment.create({
+        data: {
+          applicationId: applicationId,
+          paymentIntentId,
+          amount,
+          currency: currency || 'usd',
+          status: 'pending',
+          paymentUrl,
+          provider: 'mock',
+        },
+      });
+    }
 
     // Update the application status to reflect payment processing
     await this.prisma.application.update({
@@ -68,6 +95,11 @@ export class PaymentService {
   }
 
   async confirmPayment(paymentIntentId: string) {
+    // Validate that paymentIntentId is provided
+    if (!paymentIntentId || paymentIntentId === 'undefined') {
+      throw new HttpException('Payment intent ID is required', HttpStatus.BAD_REQUEST);
+    }
+
     // Find the payment by paymentIntentId
     const payment = await this.prisma.payment.findFirst({
       where: { paymentIntentId },
@@ -101,8 +133,10 @@ export class PaymentService {
         select: { email: true }
       });
 
-      if (user) {
+      if (user && user.email) {
         await this.emailService.sendPaymentConfirmation(user.email, updatedApplication.id);
+      } else {
+        console.warn(`No email found for user ${updatedApplication.userId}, skipping payment confirmation email`);
       }
     } catch (error) {
       console.error('Failed to send payment confirmation email:', error);
@@ -113,6 +147,11 @@ export class PaymentService {
   }
 
   async getPaymentStatus(paymentIntentId: string) {
+    // Validate that paymentIntentId is provided
+    if (!paymentIntentId || paymentIntentId === 'undefined') {
+      throw new HttpException('Payment intent ID is required', HttpStatus.BAD_REQUEST);
+    }
+
     const payment = await this.prisma.payment.findFirst({
       where: { paymentIntentId },
     });
