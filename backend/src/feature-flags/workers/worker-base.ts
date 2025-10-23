@@ -1,16 +1,43 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { Job } from 'bull';
 
 export interface JobData {
   applicationId: string;
   [key: string]: any;
 }
 
+export interface RetryConfig {
+  maxAttempts: number;
+  baseDelay: number; // in milliseconds
+  maxDelay: number;  // in milliseconds
+}
+
 @Injectable()
 export abstract class WorkerBase {
+  protected readonly logger = new Logger(this.constructor.name);
+
   constructor(protected prisma: PrismaService) {}
 
   abstract processJob(jobData: JobData): Promise<any>;
+
+  async processJobWithRetry(jobData: JobData, job: Job): Promise<any> {
+    const attemptNumber = job.attemptsMade + 1;
+    
+    try {
+      const result = await this.processJob(jobData);
+      this.logger.log(`Job ${job.id} completed successfully on attempt ${attemptNumber}`);
+      return result;
+    } catch (error) {
+      this.logger.error(
+        `Job ${job.id} failed on attempt ${attemptNumber} of ${job.opts.attempts || 1}: ${error.message}`,
+        error.stack
+      );
+      
+      // Re-throw the error to trigger Bull's retry mechanism
+      throw error;
+    }
+  }
 
   async updateApplicationStatus(applicationId: string, status: string) {
     // In a real implementation, you would calculate progress based on the 

@@ -4,12 +4,15 @@ import { ConfigService } from '@nestjs/config';
 import { EmailService } from '../email/email.service';
 import { PaymentService } from './payment.service';
 import { Prisma } from '../../generated/prisma';
+import { CircuitBreakerService } from '../feature-flags/circuit-breaker/circuit-breaker.service';
+import { FeatureFlagsService } from '../feature-flags/feature-flags.service';
 
 describe('PaymentService', () => {
   let service: PaymentService;
   let prisma: PrismaService;
   let configService: ConfigService;
   let emailService: EmailService;
+  let circuitBreakerService: CircuitBreakerService;
 
   // Mock data
   const mockApplication = {
@@ -73,6 +76,18 @@ describe('PaymentService', () => {
             sendPaymentConfirmation: jest.fn(),
           },
         },
+        {
+          provide: CircuitBreakerService,
+          useValue: {
+            executeWithCircuitBreaker: jest.fn().mockImplementation((circuitName, operation) => operation()),
+          },
+        },
+        {
+          provide: FeatureFlagsService,
+          useValue: {
+            getFlag: jest.fn().mockResolvedValue({ enabled: true }),
+          },
+        },
       ],
     }).compile();
 
@@ -80,6 +95,7 @@ describe('PaymentService', () => {
     prisma = module.get<PrismaService>(PrismaService);
     configService = module.get<ConfigService>(ConfigService);
     emailService = module.get<EmailService>(EmailService);
+    circuitBreakerService = module.get<CircuitBreakerService>(CircuitBreakerService);
   });
 
   it('should be defined', () => {

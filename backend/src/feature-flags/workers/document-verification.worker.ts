@@ -3,7 +3,7 @@ import type { Job } from 'bull';
 import { WorkerBase } from './worker-base';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DocumentVerificationService } from '../../documents/document-verification.service';
-import { Inject, Logger } from '@nestjs/common';
+import { Inject, Logger, Injectable } from '@nestjs/common';
 
 export interface VerifyDocumentJobData {
   applicationId: string;
@@ -12,8 +12,6 @@ export interface VerifyDocumentJobData {
 
 @Processor('verify_document')
 export class DocumentVerificationWorker extends WorkerBase {
-  private readonly logger = new Logger(DocumentVerificationWorker.name);
-
   constructor(
     prisma: PrismaService,
     private documentVerificationService: DocumentVerificationService,
@@ -62,6 +60,6 @@ export class DocumentVerificationWorker extends WorkerBase {
 
   @Process('verify_document')
   async processVerifyDocument(job: Job<VerifyDocumentJobData>): Promise<any> {
-    return await this.processJob(job.data);
+    return await this.processJobWithRetry(job.data, job);
   }
 }

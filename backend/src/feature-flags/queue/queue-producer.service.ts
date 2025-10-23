@@ -1,6 +1,8 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bull';
 import type { Queue } from 'bull';
+import { BulkheadService } from '../bulkhead/bulkhead.service';
+import { FeatureFlagsService } from '../feature-flags.service';
 
 export type JobPriority = 'low' | 'normal' | 'high' | 'critical';
 
@@ -10,6 +12,8 @@ export class QueueProducerService {
     @InjectQueue('verify_document') private verifyDocumentQueue: Queue,
     @InjectQueue('create_payment') private createPaymentQueue: Queue,
     @InjectQueue('send_email') private sendEmailQueue: Queue,
+    private bulkheadService: BulkheadService,
+    private featureFlagsService: FeatureFlagsService,
   ) {}
 
   async addVerifyDocumentJob(
@@ -17,10 +21,29 @@ export class QueueProducerService {
     data: any, 
     priority: JobPriority = 'normal'
   ): Promise<void> {
-    await this.verifyDocumentQueue.add('verify_document', data, {
-      jobId,
-      priority: this.mapPriority(priority),
-    });
+    // Check if bulkhead isolation is enabled
+    const flag = await this.featureFlagsService.getFlag('bulkhead-isolation');
+    if (flag && flag.enabled) {
+      // Execute with bulkhead isolation
+      await this.bulkheadService.executeInBulkhead('verify_document', async () => {
+        await this.verifyDocumentQueue.add('verify_document', data, {
+          jobId,
+          priority: this.mapPriority(priority),
+          // Add retry configuration if retry feature is enabled
+          attempts: 3,
+          backoff: {
+            type: 'exponential',
+            delay: 2000,
+          },
+        });
+      });
+    } else {
+      // Execute without bulkhead isolation
+      await this.verifyDocumentQueue.add('verify_document', data, {
+        jobId,
+        priority: this.mapPriority(priority),
+      });
+    }
   }
 
   async addCreatePaymentJob(
@@ -28,10 +51,29 @@ export class QueueProducerService {
     data: any, 
     priority: JobPriority = 'normal'
   ): Promise<void> {
-    await this.createPaymentQueue.add('create_payment', data, {
-      jobId,
-      priority: this.mapPriority(priority),
-    });
+    // Check if bulkhead isolation is enabled
+    const flag = await this.featureFlagsService.getFlag('bulkhead-isolation');
+    if (flag && flag.enabled) {
+      // Execute with bulkhead isolation
+      await this.bulkheadService.executeInBulkhead('create_payment', async () => {
+        await this.createPaymentQueue.add('create_payment', data, {
+          jobId,
+          priority: this.mapPriority(priority),
+          // Add retry configuration if retry feature is enabled
+          attempts: 3,
+          backoff: {
+            type: 'exponential',
+            delay: 2000,
+          },
+        });
+      });
+    } else {
+      // Execute without bulkhead isolation
+      await this.createPaymentQueue.add('create_payment', data, {
+        jobId,
+        priority: this.mapPriority(priority),
+      });
+    }
   }
 
   async addSendEmailJob(
@@ -39,10 +81,29 @@ export class QueueProducerService {
     data: any, 
     priority: JobPriority = 'normal'
   ): Promise<void> {
-    await this.sendEmailQueue.add('send_email', data, {
-      jobId,
-      priority: this.mapPriority(priority),
-    });
+    // Check if bulkhead isolation is enabled
+    const flag = await this.featureFlagsService.getFlag('bulkhead-isolation');
+    if (flag && flag.enabled) {
+      // Execute with bulkhead isolation
+      await this.bulkheadService.executeInBulkhead('send_email', async () => {
+        await this.sendEmailQueue.add('send_email', data, {
+          jobId,
+          priority: this.mapPriority(priority),
+          // Add retry configuration if retry is enabled
+          attempts: 2,
+          backoff: {
+            type: 'exponential',
+            delay: 1000,
+          },
+        });
+      });
+    } else {
+      // Execute without bulkhead isolation
+      await this.sendEmailQueue.add('send_email', data, {
+        jobId,
+        priority: this.mapPriority(priority),
+      });
+    }
   }
 
   private mapPriority(priority: JobPriority): number {

@@ -4,6 +4,7 @@ import { Prisma, Application } from '../../generated/prisma';
 import { ConfigService } from '@nestjs/config';
 import { EmailService } from '../email/email.service';
 import { ApplicationStatus } from '../applications/application-status.service';
+import { CircuitBreakerService } from '../feature-flags/circuit-breaker/circuit-breaker.service';
 
 export type PaymentIntentDto = {
   applicationId: string;
@@ -17,81 +18,93 @@ export class PaymentService {
     private prisma: PrismaService,
     private configService: ConfigService,
     private emailService: EmailService,
+    private circuitBreakerService: CircuitBreakerService,
   ) {}
 
   async createPaymentIntent(dto: PaymentIntentDto) {
-    const { applicationId, amount, currency } = dto;
+    // Execute the payment creation with circuit breaker protection
+    return await this.circuitBreakerService.executeWithCircuitBreaker(
+      'payment-service',
+      async () => {
+        const { applicationId, amount, currency } = dto;
 
-    // Verify the application exists
-    const application = await this.prisma.application.findUnique({
-      where: { id: applicationId },
-    });
+        // Verify the application exists
+        const application = await this.prisma.application.findUnique({
+          where: { id: applicationId },
+        });
 
-    if (!application) {
-      throw new HttpException('Application not found', HttpStatus.NOT_FOUND);
-    }
+        if (!application) {
+          throw new HttpException('Application not found', HttpStatus.NOT_FOUND);
+        }
 
-    // Check if a payment already exists for this application
-    let payment = await this.prisma.payment.findUnique({
-      where: { applicationId },
-    });
+        // Check if a payment already exists for this application
+        let payment = await this.prisma.payment.findUnique({
+          where: { applicationId },
+        });
 
-    if (payment) {
-      // If payment already exists, update it instead of creating a new one
-      // This handles scenarios where a user might try to pay again
-      const paymentIntentId = `pi_mock_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      const paymentUrl = `${this.configService.get('CLIENT_URL', 'http://localhost:3000')}/payment/${paymentIntentId}`;
-      
-      payment = await this.prisma.payment.update({
-        where: { 
-          id: payment.id 
-        },
-        data: {
-          amount,
-          currency: currency || 'usd',
-          status: 'pending',
-          paymentIntentId: paymentIntentId,
-          paymentUrl: paymentUrl,
-          provider: 'mock',
-          updatedAt: new Date(), // Update the timestamp
-        },
-      });
-    } else {
-      // In a real implementation, you would call a payment provider (e.g., Stripe)
-      // For this mock implementation, we'll simulate the payment creation
-      const paymentIntentId = `pi_mock_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-      
-      // Payment URL - in a real implementation this would be provided by the payment provider
-      const paymentUrl = `${this.configService.get('CLIENT_URL', 'http://localhost:3000')}/payment/${paymentIntentId}`;
-      
-      // Create the payment record in the database
-      payment = await this.prisma.payment.create({
-        data: {
-          applicationId: applicationId,
-          paymentIntentId,
-          amount,
-          currency: currency || 'usd',
-          status: 'pending',
-          paymentUrl,
-          provider: 'mock',
-        },
-      });
-    }
+        if (payment) {
+          // If payment already exists, update it instead of creating a new one
+          // This handles scenarios where a user might try to pay again
+          const paymentIntentId = `pi_mock_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          const paymentUrl = `${this.configService.get('CLIENT_URL', 'http://localhost:3000')}/payment/${paymentIntentId}`;
+          
+          payment = await this.prisma.payment.update({
+            where: { 
+              id: payment.id 
+            },
+            data: {
+              amount,
+              currency: currency || 'usd',
+              status: 'pending',
+              paymentIntentId: paymentIntentId,
+              paymentUrl: paymentUrl,
+              provider: 'mock',
+              updatedAt: new Date(), // Update the timestamp
+            },
+          });
+        } else {
+          // In a real implementation, you would call a payment provider (e.g., Stripe)
+          // For this mock implementation, we'll simulate the payment creation
+          const paymentIntentId = `pi_mock_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+          
+          // Payment URL - in a real implementation this would be provided by the payment provider
+          const paymentUrl = `${this.configService.get('CLIENT_URL', 'http://localhost:3000')}/payment/${paymentIntentId}`;
+          
+          // Create the payment record in the database
+          payment = await this.prisma.payment.create({
+            data: {
+              applicationId: applicationId,
+              paymentIntentId,
+              amount,
+              currency: currency || 'usd',
+              status: 'pending',
+              paymentUrl,
+              provider: 'mock',
+            },
+          });
+        }
 
-    // Update the application status to reflect payment processing
-    await this.prisma.application.update({
-      where: { id: applicationId },
-      data: { status: ApplicationStatus.PROCESSING_PAYMENT },
-    });
+        // Update the application status to reflect payment processing
+        await this.prisma.application.update({
+          where: { id: applicationId },
+          data: { status: ApplicationStatus.PROCESSING_PAYMENT },
+        });
 
-    return {
-      id: payment.id,
-      paymentIntentId: payment.paymentIntentId,
-      amount: payment.amount,
-      currency: payment.currency,
-      status: payment.status,
-      paymentUrl: payment.paymentUrl,
-    };
+        return {
+          id: payment.id,
+          paymentIntentId: payment.paymentIntentId,
+          amount: payment.amount,
+          currency: payment.currency,
+          status: payment.status,
+          paymentUrl: payment.paymentUrl,
+        };
+      },
+      {
+        failureThreshold: 3,
+        timeout: 30000, // 30 seconds
+        resetTimeout: 60000, // 1 minute
+      }
+    );
   }
 
   async confirmPayment(paymentIntentId: string) {

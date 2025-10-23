@@ -3,7 +3,7 @@ import type { Job } from 'bull';
 import { WorkerBase } from './worker-base';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PaymentService } from '../../payments-mock/payment.service';
-import { Inject } from '@nestjs/common';
+import { Inject, Logger } from '@nestjs/common';
 
 export interface CreatePaymentJobData {
   applicationId: string;
@@ -39,12 +39,13 @@ export class PaymentProcessingWorker extends WorkerBase {
     } catch (error) {
       // Update application status to 'payment_failed'
       await this.updateApplicationStatus(applicationId, 'payment_failed');
+      this.logger.error(`Payment processing failed for application ${applicationId}: ${error.message}`);
       throw error;
     }
   }
 
   @Process('create_payment')
   async processCreatePayment(job: Job<CreatePaymentJobData>): Promise<any> {
-    return this.processJob(job.data);
+    return this.processJobWithRetry(job.data, job);
   }
 }

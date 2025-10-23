@@ -11,10 +11,14 @@ import { AdminController } from './admin/admin.controller';
 import { DocumentVerificationWorker } from './workers/document-verification.worker';
 import { PaymentProcessingWorker } from './workers/payment-processing.worker';
 import { EmailSendingWorker } from './workers/email-sending.worker';
-import { ApplicationsModule } from '../applications/applications.module';
+import { DlqService } from './workers/dlq.service';
+import { BulkheadService } from './bulkhead/bulkhead.service';
+import { CircuitBreakerService } from './circuit-breaker/circuit-breaker.service';
+import { IdempotencyService } from './idempotency/idempotency.service';
+import { forwardRef } from '@nestjs/common';
 import { DocumentsModule } from '../documents/documents.module';
-import { PaymentMockModule } from '../payments-mock/payment.module';
 import { EmailModule } from '../email/email.module';
+import { PaymentMockModule } from '../payments-mock/payment.module';
 
 @Module({
   imports: [
@@ -34,10 +38,9 @@ import { EmailModule } from '../email/email.module';
       { name: 'create_payment' },
       { name: 'send_email' },
     ),
-    ApplicationsModule,
     DocumentsModule,
-    PaymentMockModule,
     EmailModule,
+    forwardRef(() => PaymentMockModule),
   ],
   controllers: [
     AdminController,
@@ -52,11 +55,16 @@ import { EmailModule } from '../email/email.module';
     DocumentVerificationWorker,
     PaymentProcessingWorker,
     EmailSendingWorker,
+    DlqService,
+    BulkheadService,
+    CircuitBreakerService,
+    IdempotencyService,
   ],
   exports: [
     FeatureFlagsService,
     QueueProducerService,
     OutboxRelayService,
+    CircuitBreakerService,
   ],
 })
 export class FeatureFlagsModule {}

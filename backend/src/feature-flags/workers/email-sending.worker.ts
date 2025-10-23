@@ -3,7 +3,7 @@ import type { Job } from 'bull';
 import { WorkerBase } from './worker-base';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EmailService } from '../../email/email.service';
-import { Inject } from '@nestjs/common';
+import { Inject, Logger } from '@nestjs/common';
 
 export interface SendEmailJobData {
   applicationId: string;
@@ -52,18 +52,17 @@ export class EmailSendingWorker extends WorkerBase {
 
       return { success: true, applicationId, email };
     } catch (error) {
-      // Log error but don't fail the entire job for email issues
-      console.error(`Failed to send email for application ${applicationId}:`, error);
+      this.logger.error(`Email sending failed for application ${applicationId}: ${error.message}`, error.stack);
       
-      // Still mark the application as having email sent even if there was an error
-      await this.updateApplicationStatus(applicationId, 'email_sent');
+      // Update status to reflect the failure
+      await this.updateApplicationStatus(applicationId, 'email_failed');
       
-      return { success: true, applicationId, email, error: error.message };
+      throw error;
     }
   }
 
   @Process('send_email')
   async processSendEmail(job: Job<SendEmailJobData>): Promise<any> {
-    return this.processJob(job.data);
+    return this.processJobWithRetry(job.data, job);
   }
 }

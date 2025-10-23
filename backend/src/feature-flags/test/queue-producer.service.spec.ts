@@ -2,12 +2,16 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { QueueProducerService } from '../queue/queue-producer.service';
 import { Queue } from 'bull';
 import { getQueueToken } from '@nestjs/bull';
+import { BulkheadService } from '../bulkhead/bulkhead.service';
+import { FeatureFlagsService } from '../feature-flags.service';
 
 describe('QueueProducerService', () => {
   let service: QueueProducerService;
   let verifyDocumentQueue: Queue;
   let createPaymentQueue: Queue;
   let sendEmailQueue: Queue;
+  let bulkheadService: BulkheadService;
+  let featureFlagsService: FeatureFlagsService;
 
   beforeEach(async () => {
     verifyDocumentQueue = {
@@ -37,10 +41,24 @@ describe('QueueProducerService', () => {
           provide: getQueueToken('send_email'),
           useValue: sendEmailQueue,
         },
+        {
+          provide: BulkheadService,
+          useValue: {
+            executeInBulkhead: jest.fn().mockImplementation((name, operation) => operation()),
+          },
+        },
+        {
+          provide: FeatureFlagsService,
+          useValue: {
+            getFlag: jest.fn().mockResolvedValue({ enabled: true }),
+          },
+        },
       ],
     }).compile();
 
     service = module.get<QueueProducerService>(QueueProducerService);
+    bulkheadService = module.get<BulkheadService>(BulkheadService);
+    featureFlagsService = module.get<FeatureFlagsService>(FeatureFlagsService);
   });
 
   it('should be defined', () => {

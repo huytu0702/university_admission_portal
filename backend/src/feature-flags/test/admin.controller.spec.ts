@@ -1,10 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AdminController, UpdateFeatureFlagDto } from '../admin/admin.controller';
 import { FeatureFlagsService } from '../feature-flags.service';
+import { DlqService } from '../workers/dlq.service';
 
 describe('AdminController', () => {
   let controller: AdminController;
   let featureFlagsService: FeatureFlagsService;
+  let dlqService: DlqService;
 
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -17,11 +19,21 @@ describe('AdminController', () => {
             updateFlag: jest.fn(),
           },
         },
+        {
+          provide: DlqService,
+          useValue: {
+            getFailedJobs: jest.fn(),
+            requeueJob: jest.fn(),
+            purgeFailedJobs: jest.fn(),
+            getDlqMetrics: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
     controller = module.get<AdminController>(AdminController);
     featureFlagsService = module.get<FeatureFlagsService>(FeatureFlagsService);
+    dlqService = module.get<DlqService>(DlqService);
   });
 
   it('should be defined', () => {

@@ -14,6 +14,7 @@ import {
   HttpStatus,
   Res,
   NotFoundException,
+  Headers,
 } from '@nestjs/common';
 import { FilesInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -59,12 +60,13 @@ export class ApplicationsController {
     @Request() req,
     @Body(ValidationPipe) createApplicationDto: CreateApplicationDto,
     @UploadedFiles() files: Array<import('multer').File>,
+    @Headers('idempotency-key') idempotencyKey?: string,
   ) {
-    // Call the service with the DTO and files
+    // Call the service with the DTO, files, and idempotency key
     return this.applicationsService.createApplication(req.user.userId, {
       personalStatement: createApplicationDto.personalStatement,
       files,
-    });
+    }, idempotencyKey);
   }
 
   @UseGuards(JwtAuthGuard)
