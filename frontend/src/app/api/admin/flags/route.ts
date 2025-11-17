@@ -3,7 +3,7 @@ import { NextRequest } from 'next/server';
 export async function GET(request: NextRequest) {
   try {
     // Forward the request to the backend admin API without authentication
-    const backendUrl = process.env.BACKEND_URL || 'http://localhost:3001';
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3000';
     const response = await fetch(`${backendUrl}/admin/flags`, {
       method: 'GET',
       headers: {

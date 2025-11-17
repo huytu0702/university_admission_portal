@@ -6,6 +6,7 @@ import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import MetricsComparisonDashboard from '@/components/MetricsComparisonDashboard';
+import RealTimeMetricsDashboard from '@/components/RealTimeMetricsDashboard';
 
 interface FeatureFlag {
   id: string;
@@ -19,7 +20,7 @@ export default function AdminPage() {
   const [featureFlags, setFeatureFlags] = useState<FeatureFlag[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'flags' | 'metrics'>('flags');
+  const [activeTab, setActiveTab] = useState<'flags' | 'metrics' | 'realtime'>('flags');
 
   useEffect(() => {
     if (activeTab === 'flags') {
@@ -114,6 +115,12 @@ export default function AdminPage() {
         >
           Performance Metrics
         </Button>
+        <Button
+          variant={activeTab === 'realtime' ? 'default' : 'ghost'}
+          onClick={() => setActiveTab('realtime')}
+        >
+          Real-Time Dashboard
+        </Button>
       </div>
 
       {activeTab === 'flags' ? (
@@ -146,8 +153,10 @@ export default function AdminPage() {
             </Card>
           ))}
         </div>
-      ) : (
+      ) : activeTab === 'metrics' ? (
         <MetricsComparisonDashboard />
+      ) : (
+        <RealTimeMetricsDashboard />
       )}
 
       {activeTab === 'flags' && featureFlags.length === 0 && !loading && (

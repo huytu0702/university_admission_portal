@@ -17,7 +17,12 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "load-test": "cd load-tests && powershell -ExecutionPolicy Bypass -File .\\run-all-tests.ps1",
+    "load-test:quick": "cd load-tests && powershell -ExecutionPolicy Bypass -File .\\run-all-tests.ps1 -TestSuite quick",
+    "load-test:spike": "cd load-tests && powershell -ExecutionPolicy Bypass -File .\\run-all-tests.ps1 -TestSuite spike",
+    "load-test:sustained": "cd load-tests && powershell -ExecutionPolicy Bypass -File .\\run-all-tests.ps1 -TestSuite sustained",
+    "load-test:pattern": "cd load-tests && powershell -ExecutionPolicy Bypass -File .\\run-all-tests.ps1 -TestSuite pattern"
   },
   "dependencies": {
     "@nestjs/bull": "^11.0.1",
@@ -36,10 +41,13 @@
     "bull": "^4.16.5",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
+    "date-fns": "^4.1.0",
     "helmet": "^8.1.0",
     "nodemailer": "^7.0.9",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
+    "prom-client": "^15.1.3",
+    "recharts": "^3.4.1",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1",
     "swagger-ui-express": "^5.0.1"
@@ -58,6 +66,7 @@
     "@types/passport": "^1.0.17",
     "@types/passport-jwt": "^4.0.1",
     "@types/supertest": "^6.0.2",
+    "axios": "^1.13.2",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",
     "eslint-plugin-prettier": "^5.2.2",
