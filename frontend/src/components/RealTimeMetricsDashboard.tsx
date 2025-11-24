@@ -67,7 +67,18 @@ export default function RealTimeMetricsDashboard() {
   const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/metrics/dashboard?timeRange=1h');
+      
+      // Get token from localStorage
+      const token = localStorage.getItem('token');
+      const headers: HeadersInit = {};
+      
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const response = await fetch('/api/metrics/dashboard?timeRange=1h', {
+        headers,
+      });
       
       if (!response.ok) {
         const errorText = await response.text();
