@@ -9,6 +9,7 @@ import { PaymentMockModule } from './payments-mock/payment.module';
 import { MetricsModule } from './metrics/metrics.module';
 import { HealthModule } from './health/health.module';
 import { FeatureFlagsModule } from './feature-flags/feature-flags.module';
+import { ReadModelModule } from './read-model/read-model.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { MetricsCollectionMiddleware } from './middleware/metrics-collection.middleware';
@@ -25,6 +26,7 @@ import { MetricsCollectionMiddleware } from './middleware/metrics-collection.mid
     MetricsModule,
     HealthModule,
     FeatureFlagsModule,
+    ReadModelModule,
   ],
   controllers: [AppController],
   providers: [AppService],

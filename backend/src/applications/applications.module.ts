@@ -9,9 +9,10 @@ import { ApplicationStatusService } from './application-status.service';
 import { IdempotencyService } from '../feature-flags/idempotency/idempotency.service';
 import { QueueProducerService } from '../feature-flags/queue/queue-producer.service';
 import { FeatureFlagsModule } from '../feature-flags/feature-flags.module';
+import { ReadModelModule } from '../read-model/read-model.module';
 
 @Module({
-  imports: [DocumentsModule, EmailModule, FeatureFlagsModule],
+  imports: [DocumentsModule, EmailModule, FeatureFlagsModule, ReadModelModule],
   providers: [
     ApplicationsService, 
     PrismaService, 

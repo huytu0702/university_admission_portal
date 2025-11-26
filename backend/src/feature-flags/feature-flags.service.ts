@@ -1,6 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { Prisma } from '@prisma/client';
 
 export type FeatureFlagDto = {
   id: string;
@@ -25,9 +24,14 @@ export class FeatureFlagsService {
     }));
   }
 
-  async getFlag(flagName: string): Promise<FeatureFlagDto | null> {
-    const flag = await this.prisma.featureFlag.findUnique({
-      where: { name: flagName },
+  async getFlag(flagIdentifier: string): Promise<FeatureFlagDto | null> {
+    const flag = await this.prisma.featureFlag.findFirst({
+      where: {
+        OR: [
+          { id: flagIdentifier },
+          { name: flagIdentifier },
+        ],
+      },
     });
     
     if (!flag) return null;
@@ -41,9 +45,22 @@ export class FeatureFlagsService {
     };
   }
 
-  async updateFlag(flagName: string, enabled: boolean): Promise<FeatureFlagDto> {
+  async updateFlag(flagIdentifier: string, enabled: boolean): Promise<FeatureFlagDto> {
+    const existingFlag = await this.prisma.featureFlag.findFirst({
+      where: {
+        OR: [
+          { id: flagIdentifier },
+          { name: flagIdentifier },
+        ],
+      },
+    });
+
+    if (!existingFlag) {
+      throw new NotFoundException(`Feature flag '${flagIdentifier}' not found`);
+    }
+
     const flag = await this.prisma.featureFlag.update({
-      where: { name: flagName },
+      where: { id: existingFlag.id },
       data: { 
         enabled, 
         updatedAt: new Date() 

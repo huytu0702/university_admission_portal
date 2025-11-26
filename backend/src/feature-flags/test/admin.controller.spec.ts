@@ -53,11 +53,11 @@ describe('AdminController', () => {
   });
 
   it('should update a feature flag', async () => {
-    const flagName = 'queue-based-load-leveling';
+    const flagIdentifier = 'queue-based-load-leveling';
     const enabled = false;
     const mockUpdatedFlag = { 
       id: '1', 
-      name: flagName, 
+      name: flagIdentifier, 
       description: 'Queue-Based Load Leveling', 
       enabled, 
       updatedAt: new Date() 
@@ -65,8 +65,8 @@ describe('AdminController', () => {
     
     jest.spyOn(featureFlagsService, 'updateFlag').mockResolvedValue(mockUpdatedFlag as any);
 
-    const result = await controller.updateFeatureFlag(flagName, { enabled });
+    const result = await controller.updateFeatureFlag(flagIdentifier, { enabled });
     expect(result).toEqual(mockUpdatedFlag);
-    expect(featureFlagsService.updateFlag).toHaveBeenCalledWith(flagName, enabled);
+    expect(featureFlagsService.updateFlag).toHaveBeenCalledWith(flagIdentifier, enabled);
   });
 });

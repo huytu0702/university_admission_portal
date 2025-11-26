@@ -8,13 +8,16 @@ import {
   HttpStatus,
   Post,
   Delete,
+  ValidationPipe,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { IsBoolean } from 'class-validator';
 import { FeatureFlagsService } from '../feature-flags.service';
 import { DlqService } from '../workers/dlq.service';
 
 // DTO for updating feature flags
 export class UpdateFeatureFlagDto {
+  @IsBoolean()
   enabled: boolean;
 }
 
@@ -39,16 +42,16 @@ export class AdminController {
     return this.featureFlagsService.getAllFlags();
   }
 
-  @Patch('flags/:flagName')
+  @Patch('flags/:flagIdentifier')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Update a specific feature flag' })
   @ApiResponse({ status: 200, description: 'Feature flag updated successfully' })
   @ApiResponse({ status: 404, description: 'Feature flag not found' })
   async updateFeatureFlag(
-    @Param('flagName') flagName: string,
-    @Body() updateDto: UpdateFeatureFlagDto,
+    @Param('flagIdentifier') flagIdentifier: string,
+    @Body(ValidationPipe) updateDto: UpdateFeatureFlagDto,
   ) {
-    return this.featureFlagsService.updateFlag(flagName, updateDto.enabled);
+    return this.featureFlagsService.updateFlag(flagIdentifier, updateDto.enabled);
   }
 
   @Get('dlq/:queueName')

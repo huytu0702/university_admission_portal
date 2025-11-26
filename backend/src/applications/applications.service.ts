@@ -1,4 +1,4 @@
-import { Injectable, HttpException, HttpStatus, Inject } from '@nestjs/common';
+import { Injectable, HttpException, HttpStatus, Inject, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Prisma, Application } from '../../generated/prisma';
 import * as fs from 'fs';
@@ -8,6 +8,7 @@ import { DocumentVerificationService } from '../documents/document-verification.
 import { EmailService } from '../email/email.service';
 import { IdempotencyService } from '../feature-flags/idempotency/idempotency.service';
 import { QueueProducerService } from '../feature-flags/queue/queue-producer.service';
+import { ApplicationReadService } from '../read-model/application-read.service';
 
 export type CreateApplicationDto = {
   personalStatement?: string;
@@ -16,6 +17,7 @@ export type CreateApplicationDto = {
 
 @Injectable()
 export class ApplicationsService {
+  private readonly logger = new Logger(ApplicationsService.name);
   private readonly uploadDir: string;
 
   constructor(
@@ -25,6 +27,7 @@ export class ApplicationsService {
     private emailService: EmailService,
     private idempotencyService: IdempotencyService,
     private queueProducerService: QueueProducerService,
+    private applicationReadService: ApplicationReadService,
   ) {
     // Create upload directory if it doesn't exist
     this.uploadDir = this.configService.get<string>('UPLOAD_DIR', './uploads');
@@ -130,6 +133,11 @@ export class ApplicationsService {
           }
         );
 
+        // Warm read model cache asynchronously
+        this.applicationReadService.refresh(application.id).catch((err) => {
+          this.logger.warn(`Failed to warm read-model cache for ${application.id}: ${err.message}`);
+        });
+
         // Return information needed for the client instead of the application object
         return {
           applicationId: application.id,
@@ -206,21 +214,31 @@ export class ApplicationsService {
   }
 
   async findAll(userId: string) {
-    return this.prisma.application.findMany({
-      where: { userId },
-      include: {
-        applicationFiles: true,
-      },
-      orderBy: {
-        createdAt: 'desc',
-      },
-    });
+    try {
+      return await this.applicationReadService.listForUser(userId);
+    } catch (err) {
+      this.logger.warn(`Read-model list fallback: ${(err as Error).message}`);
+      return this.prisma.application.findMany({
+        where: { userId },
+        include: {
+          applicationFiles: true,
+        },
+        orderBy: {
+          createdAt: 'desc',
+        },
+      });
+    }
   }
 
   async updateStatus(applicationId: string, status: string) {
-    return this.prisma.application.update({
+    const updated = await this.prisma.application.update({
       where: { id: applicationId },
       data: { status },
     });
+    // Refresh cache/read model so new status is visible immediately
+    this.applicationReadService.refresh(applicationId).catch((err) => {
+      this.logger.warn(`Read-model refresh failed for ${applicationId}: ${err.message}`);
+    });
+    return updated;
   }
 }

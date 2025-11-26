@@ -15,7 +15,7 @@ describe('FeatureFlagsService', () => {
           useValue: {
             featureFlag: {
               findMany: jest.fn(),
-              findUnique: jest.fn(),
+              findFirst: jest.fn(),
               update: jest.fn(),
               create: jest.fn(),
             },
@@ -66,12 +66,17 @@ describe('FeatureFlagsService', () => {
       updatedAt: new Date() 
     };
     
-    jest.spyOn(prismaService.featureFlag, 'findUnique').mockResolvedValue(mockFlag as any);
+    jest.spyOn(prismaService.featureFlag, 'findFirst').mockResolvedValue(mockFlag as any);
 
     const result = await service.getFlag('queue-based-load-leveling');
     expect(result).toEqual(mockFlag);
-    expect(prismaService.featureFlag.findUnique).toHaveBeenCalledWith({
-      where: { name: 'queue-based-load-leveling' },
+    expect(prismaService.featureFlag.findFirst).toHaveBeenCalledWith({
+      where: {
+        OR: [
+          { id: 'queue-based-load-leveling' },
+          { name: 'queue-based-load-leveling' },
+        ],
+      },
     });
   });
 
@@ -86,16 +91,23 @@ describe('FeatureFlagsService', () => {
       updatedAt: new Date() 
     };
     
+    jest.spyOn(prismaService.featureFlag, 'findFirst').mockResolvedValue(updatedFlag as any);
     jest.spyOn(prismaService.featureFlag, 'update').mockResolvedValue(updatedFlag as any);
 
     const result = await service.updateFlag(flagName, enabled);
     expect(result).toEqual(updatedFlag);
     expect(prismaService.featureFlag.update).toHaveBeenCalledWith({
-      where: { name: flagName },
+      where: { id: updatedFlag.id },
       data: { 
         enabled, 
         updatedAt: expect.any(Date) 
       },
     });
+  });
+
+  it('should throw when updating a non-existent feature flag', async () => {
+    jest.spyOn(prismaService.featureFlag, 'findFirst').mockResolvedValue(null as any);
+
+    await expect(service.updateFlag('missing-flag', true)).rejects.toThrow('Feature flag \'missing-flag\' not found');
   });
 });
