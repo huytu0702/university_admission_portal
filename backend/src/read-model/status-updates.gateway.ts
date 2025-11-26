@@ -16,7 +16,7 @@ export class ApplicationStatusStream {
     this.subject.next(event);
   }
 
-  stream(): Observable<MessageEvent> {
-    return this.subject.asObservable() as Observable<MessageEvent>;
+  stream(): Observable<StatusEvent> {
+    return this.subject.asObservable();
   }
 }
