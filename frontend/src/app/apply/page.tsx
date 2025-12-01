@@ -215,9 +215,9 @@ export default function ApplicationForm() {
         if (response.ok) {
           const result = await response.json();
 
-          // Redirect to the payment page after successful submission
-          alert('Application submitted successfully! Please proceed with payment.');
-          router.push(`/payment/${result.applicationId}`);
+          // Redirect to the status page after successful submission (shows both status + payment options)
+          alert('Application submitted successfully! You can now track your application status and complete payment.');
+          router.push(`/status/${result.applicationId}`);
         } else {
           const errorData = await response.json();
 

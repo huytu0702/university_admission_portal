@@ -14,11 +14,11 @@ export class QueueProducerService {
     @InjectQueue('send_email') private sendEmailQueue: Queue,
     private bulkheadService: BulkheadService,
     private featureFlagsService: FeatureFlagsService,
-  ) {}
+  ) { }
 
   async addVerifyDocumentJob(
-    jobId: string, 
-    data: any, 
+    jobId: string,
+    data: any,
     priority: JobPriority = 'normal'
   ): Promise<void> {
     // Check if bulkhead isolation is enabled
@@ -47,8 +47,8 @@ export class QueueProducerService {
   }
 
   async addCreatePaymentJob(
-    jobId: string, 
-    data: any, 
+    jobId: string,
+    data: any,
     priority: JobPriority = 'normal'
   ): Promise<void> {
     // Check if bulkhead isolation is enabled
@@ -77,8 +77,8 @@ export class QueueProducerService {
   }
 
   async addSendEmailJob(
-    jobId: string, 
-    data: any, 
+    jobId: string,
+    data: any,
     priority: JobPriority = 'normal'
   ): Promise<void> {
     // Check if bulkhead isolation is enabled

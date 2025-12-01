@@ -1,14 +1,16 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useRouter } from 'next/navigation';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { getApplication, getApplicationProgress, fetchDocumentUrl } from '@/lib/api';
+import { Button } from '@/components/ui/button';
+import { getApplication, getApplicationProgress, fetchDocumentUrl, createPaymentIntent, confirmPayment } from '@/lib/api';
 
 export default function StatusPage() {
     const params = useParams();
+    const router = useRouter();
     const id = params.id as string;
     const [application, setApplication] = useState<any>(null);
     const [progress, setProgress] = useState(0);
@@ -16,6 +18,7 @@ export default function StatusPage() {
     const [error, setError] = useState('');
     const [selectedDocument, setSelectedDocument] = useState<{ file: any; url: string } | null>(null);
     const [documentLoading, setDocumentLoading] = useState(false);
+    const [paymentLoading, setPaymentLoading] = useState(false);
 
     useEffect(() => {
         if (id) {
@@ -70,6 +73,49 @@ export default function StatusPage() {
             URL.revokeObjectURL(selectedDocument.url);
         }
         setSelectedDocument(null);
+    };
+
+    const handlePayment = async () => {
+        try {
+            setPaymentLoading(true);
+
+            // Create a payment intent with the backend
+            const response = await createPaymentIntent({
+                applicationId: id,
+                amount: 5000, // $50.00 in cents
+                currency: 'usd',
+            });
+
+            if (response.ok) {
+                const paymentData = await response.json();
+
+                // Verify that paymentData and paymentIntentId exist before proceeding
+                if (!paymentData || !paymentData.paymentIntentId) {
+                    setError('Failed to create payment intent: missing paymentIntentId');
+                    return;
+                }
+
+                // Since this is a mock payment, automatically confirm payment
+                const confirmResponse = await confirmPayment(paymentData.paymentIntentId);
+
+                if (confirmResponse.ok) {
+                    // Refresh application data to show updated payment status
+                    await fetchApplicationStatus();
+                    alert('Payment successful! Your application is now being processed.');
+                } else {
+                    const confirmError = await confirmResponse.json();
+                    setError(confirmError.message || 'Failed to confirm payment');
+                }
+            } else {
+                const errorData = await response.json();
+                setError(errorData.message || 'Failed to initiate payment');
+            }
+        } catch (err) {
+            console.error('Error processing payment:', err);
+            setError('An error occurred during payment processing');
+        } finally {
+            setPaymentLoading(false);
+        }
     };
 
     if (loading) {
@@ -305,14 +351,71 @@ export default function StatusPage() {
                             </div>
                         )}
 
+                        {/* Payment Action Section */}
+                        {!application.payment || application.payment.status !== 'succeeded' ? (
+                            <div className="mb-8">
+                                <h3 className="text-lg font-medium mb-4">Complete Your Application</h3>
+                                <Card className="border-2 border-orange-200 bg-orange-50">
+                                    <CardContent className="p-6">
+                                        <div className="flex items-center justify-between mb-4">
+                                            <div>
+                                                <h4 className="font-medium text-orange-800">Payment Required</h4>
+                                                <p className="text-sm text-orange-600">Application fee: $50.00</p>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-2xl font-bold text-orange-800">$50.00</p>
+                                                <p className="text-sm text-orange-600">USD</p>
+                                            </div>
+                                        </div>
+                                        <Button
+                                            onClick={handlePayment}
+                                            disabled={paymentLoading}
+                                            className="w-full bg-orange-600 hover:bg-orange-700 text-white"
+                                        >
+                                            {paymentLoading ? 'Processing...' : 'Pay Now'}
+                                        </Button>
+                                        <p className="text-xs text-orange-600 mt-2 text-center">
+                                            Your payment will be processed securely through our payment partner
+                                        </p>
+                                    </CardContent>
+                                </Card>
+                            </div>
+                        ) : (
+                            <div className="mb-8">
+                                <Card className="border-2 border-green-200 bg-green-50">
+                                    <CardContent className="p-6">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center space-x-3">
+                                                <div className="w-12 h-12 bg-green-500 rounded-full flex items-center justify-center">
+                                                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                                    </svg>
+                                                </div>
+                                                <div>
+                                                    <h4 className="font-medium text-green-800">Payment Completed</h4>
+                                                    <p className="text-sm text-green-600">
+                                                        Paid on {new Date(application.payment.updatedAt).toLocaleDateString()}
+                                                    </p>
+                                                </div>
+                                            </div>
+                                            <div className="text-right">
+                                                <p className="text-lg font-bold text-green-800">${(application.payment.amount / 100).toFixed(2)}</p>
+                                                <p className="text-sm text-green-600 uppercase">{application.payment.currency}</p>
+                                            </div>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            </div>
+                        )}
+
                         <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
                             <h4 className="font-medium text-blue-800 mb-2">Next Steps</h4>
                             <p className="text-blue-700">
                                 {application.status === 'submitted' || application.status === 'verified'
-                                    ? 'Wait for document verification and payment processing. You will receive updates via email.'
+                                    ? 'Your documents are being processed. Complete your payment to finalize your application.'
                                     : application.status === 'processing_payment'
                                         ? 'Complete your payment to finalize your application.'
-                                        : application.status === 'paid'
+                                        : application.status === 'paid' || application.payment?.status === 'succeeded'
                                             ? 'Your application is under review. You will receive updates via email.'
                                             : 'Your application status has been updated. Please check back for more information.'}
                             </p>
