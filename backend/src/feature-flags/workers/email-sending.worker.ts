@@ -50,6 +50,18 @@ export class EmailSendingWorker extends WorkerBase {
       // Update application status to 'email_sent'
       await this.updateApplicationStatus(applicationId, 'email_sent');
 
+      // Emit event to mark workflow as complete
+      // This will trigger final status update to 'completed'
+      await this.prisma.outbox.create({
+        data: {
+          eventType: 'email_sent',
+          payload: JSON.stringify({
+            applicationId: applicationId,
+          }),
+        },
+      });
+      this.logger.log(`Emitted email_sent event for app: ${applicationId}`);
+
       return { success: true, applicationId, email };
     } catch (error) {
       this.logger.error(`Email sending failed for application ${applicationId}: ${error.message}`, error.stack);

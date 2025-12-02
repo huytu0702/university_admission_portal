@@ -178,3 +178,5 @@ backend/coverage/lcov-report/
 
 k6-v0.48.0-windows-amd64
 k6-v0.48.0-windows-amd64.zip
+
+tokens.json

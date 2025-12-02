@@ -49,6 +49,18 @@ export class DocumentVerificationWorker extends WorkerBase {
       // Update application status to 'verified' after all files are processed
       await this.updateApplicationStatus(applicationId, 'verified');
 
+      // Emit event to trigger next job (payment)
+      // This event will be picked up by OutboxRelayScheduler
+      await this.prisma.outbox.create({
+        data: {
+          eventType: 'document_verified',
+          payload: JSON.stringify({
+            applicationId: applicationId,
+          }),
+        },
+      });
+      this.logger.log(`Emitted document_verified event for app: ${applicationId}`);
+
       return { success: true, applicationId };
     } catch (error) {
       // Update application status to 'verification_failed'

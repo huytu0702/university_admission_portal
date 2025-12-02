@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Prisma } from '../../generated/prisma';
 import { Application } from '../../generated/prisma';
 import { EmailService } from '../email/email.service';
+import { QueueProducerService } from '../feature-flags/queue/queue-producer.service';
 
 export enum ApplicationStatus {
   SUBMITTED = 'submitted',
@@ -21,6 +22,7 @@ export class ApplicationStatusService {
   constructor(
     private prisma: PrismaService,
     private emailService: EmailService,
+    private queueProducerService: QueueProducerService,
   ) {}
 
   async updateApplicationStatus(applicationId: string, status: ApplicationStatus, details?: string) {
@@ -45,18 +47,21 @@ export class ApplicationStatusService {
       },
     });
 
-    // Send status update email
+    // Enqueue status update email to queue
     try {
       if (application.user.email) {
-        await this.emailService.sendApplicationStatusUpdate(
-          application.user.email, 
-          applicationId, 
-          status
+        await this.queueProducerService.addSendEmailJob(
+          `email-status-${applicationId}`,
+          {
+            applicationId,
+            email: application.user.email,
+            template: 'status-update'
+          }
         );
       }
     } catch (error) {
-      console.error('Failed to send status update email:', error);
-      // Don't fail the status update if email sending fails
+      console.error('Failed to enqueue status update email:', error);
+      // Don't fail the status update if email enqueuing fails
     }
 
     // If the status is COMPLETED, update the progress to 100%
@@ -96,18 +101,21 @@ export class ApplicationStatusService {
       },
     });
 
-    // Send status update email
+    // Enqueue completion status update email to queue
     try {
       if (application.user.email) {
-        await this.emailService.sendApplicationStatusUpdate(
-          application.user.email, 
-          applicationId, 
-          ApplicationStatus.COMPLETED
+        await this.queueProducerService.addSendEmailJob(
+          `email-completion-${applicationId}`,
+          {
+            applicationId,
+            email: application.user.email,
+            template: 'status-update'
+          }
         );
       }
     } catch (error) {
-      console.error('Failed to send completion status email:', error);
-      // Don't fail the completion if email sending fails
+      console.error('Failed to enqueue completion status email:', error);
+      // Don't fail the completion if email enqueuing fails
     }
 
     return updatedApplication;

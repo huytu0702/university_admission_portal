@@ -40,27 +40,50 @@ export class OutboxRelayService {
     const payload = JSON.parse(message.payload);
     
     switch (message.eventType) {
+      // 📄 Step 1: Document uploaded → Start verification
       case 'document_uploaded':
         await this.queueProducerService.addVerifyDocumentJob(
           `verify_${message.id}`,
           payload,
           'normal'
         );
+        this.logger.log(`Enqueued verify_document job for app: ${payload.applicationId}`);
         break;
-      case 'application_submitted':
+
+      // ✅ Step 2: Documents verified → Start payment (only if verification succeeded)
+      case 'document_verified':
         await this.queueProducerService.addCreatePaymentJob(
           `payment_${message.id}`,
           payload,
           'normal'
         );
+        this.logger.log(`Enqueued create_payment job for app: ${payload.applicationId}`);
         break;
+
+      // 💳 Step 3: Payment completed → Send confirmation email
       case 'payment_completed':
         await this.queueProducerService.addSendEmailJob(
           `email_${message.id}`,
           payload,
           'normal'
         );
+        this.logger.log(`Enqueued send_email job for app: ${payload.applicationId}`);
         break;
+
+      // 📧 Step 4: Email sent → Application completed
+      case 'email_sent':
+        // Mark application as completed
+        await this.prisma.application.update({
+          where: { id: payload.applicationId },
+          data: { 
+            status: 'completed',
+            progress: 100,
+            updatedAt: new Date(),
+          },
+        });
+        this.logger.log(`Application completed: ${payload.applicationId}`);
+        break;
+
       default:
         this.logger.warn(`Unknown event type: ${message.eventType}`);
     }

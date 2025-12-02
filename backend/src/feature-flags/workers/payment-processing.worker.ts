@@ -35,6 +35,18 @@ export class PaymentProcessingWorker extends WorkerBase {
       // Update application status to 'payment_initiated'
       await this.updateApplicationStatus(applicationId, 'payment_initiated');
 
+      // Emit event to trigger next job (email)
+      // This event will be picked up by OutboxRelayScheduler
+      await this.prisma.outbox.create({
+        data: {
+          eventType: 'payment_completed',
+          payload: JSON.stringify({
+            applicationId: applicationId,
+          }),
+        },
+      });
+      this.logger.log(`Emitted payment_completed event for app: ${applicationId}`);
+
       return { success: true, applicationId };
     } catch (error) {
       // Update application status to 'payment_failed'

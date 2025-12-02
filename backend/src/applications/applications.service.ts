@@ -111,8 +111,9 @@ export class ApplicationsService {
           return newApplication;
         });
 
-        // After creating the application, enqueue jobs for processing
-        // This maintains the queue-based load leveling feature
+        // After creating the application, enqueue ONLY the first job
+        // Sequential workflow: verify → payment → email
+        // Each step triggers the next one
         
         // Enqueue document verification job if files were uploaded
         if (validatedFiles.length > 0) {
@@ -123,15 +124,18 @@ export class ApplicationsService {
               applicationFileIds: validatedFiles.map(f => f.path),
             }
           );
+        } else {
+          // If no files, skip verification and go directly to payment
+          // Create an Outbox event to trigger payment job
+          await this.prisma.outbox.create({
+            data: {
+              eventType: 'document_verified',
+              payload: JSON.stringify({
+                applicationId: application.id,
+              }),
+            },
+          });
         }
-        
-        // Enqueue payment processing job
-        await this.queueProducerService.addCreatePaymentJob(
-          `payment-${application.id}`,
-          {
-            applicationId: application.id,
-          }
-        );
 
         // Warm read model cache asynchronously
         this.applicationReadService.refresh(application.id).catch((err) => {
