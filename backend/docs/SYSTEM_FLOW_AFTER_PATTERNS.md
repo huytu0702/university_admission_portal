@@ -29,7 +29,7 @@ sequenceDiagram
     Client->>Controller: POST /applications<br/>Header: Idempotency-Key
     Controller->>Service: createApplication(userId, dto, key)
     
-    rect rgb(31, 43, 31)
+    rect rgb(200, 255, 200)
     Note right of Service: ✅ Pattern: Idempotency
     Service->>Idempotency: Check idempotency key
     alt Key exists (duplicate request)
@@ -50,7 +50,7 @@ sequenceDiagram
         Service->>DB: INSERT application_file
     end
     
-    rect rgb(31, 43, 31)
+    rect rgb(200, 255, 200)
     Note right of Service: ✅ Pattern: Outbox
     Service->>Outbox: INSERT outbox event<br/>(document_uploaded)
     Service->>Outbox: INSERT outbox event<br/>(application_submitted)
@@ -58,7 +58,7 @@ sequenceDiagram
     
     Service->>DB: COMMIT TRANSACTION
     
-    rect rgb(31, 43, 31)
+    rect rgb(200, 255, 200)
     Note right of Service: ✅ Pattern: CQRS-lite
     Service->>ReadModel: Warm read model cache (async)
     end
@@ -68,7 +68,7 @@ sequenceDiagram
     
     Note over Client,ReadModel: ⚡ Client receives response immediately!
     
-    rect rgb(31, 43, 31)
+    rect rgb(255, 240, 200)
     Note over Scheduler,Queue: Async Processing Pipeline
     
     loop Every 2 seconds
@@ -82,14 +82,14 @@ sequenceDiagram
     end
     end
     
-    rect rgb(31, 35, 39)
+    rect rgb(200, 230, 255)
     Note over Workers: ✅ Pattern: Competing Consumers
     
     par Step 1: Document Verification
         Workers->>Queue: Poll verify_document job
         Queue-->>Workers: Job data
         
-        rect rgb(50, 40, 50)
+        rect rgb(255, 200, 255)
         Note over Workers: ✅ Pattern: Bulkhead Isolation
         Workers->>Workers: Execute in isolated pool<br/>(max concurrency: 5)
         Workers->>Workers: Scan virus (background)
@@ -99,7 +99,7 @@ sequenceDiagram
         end
         
         alt Job Failed
-            rect rgb(49, 39, 39)
+            rect rgb(255, 200, 200)
             Note over Workers: ✅ Pattern: Retry + Exponential Backoff
             Workers->>Workers: Retry with backoff<br/>(attempts: 3, delay: 2s, 4s, 8s)
             alt Max retries exceeded
@@ -111,7 +111,7 @@ sequenceDiagram
         Workers->>Queue: Poll create_payment job
         Queue-->>Workers: Job data
         
-        rect rgb(53, 43, 53)
+        rect rgb(255, 200, 255)
         Note over Workers: ✅ Pattern: Circuit Breaker
         Workers->>CircuitBreaker: Check state
         alt Circuit OPEN
@@ -278,7 +278,7 @@ sequenceDiagram
     Service->>DB: INSERT INTO application
     Service->>DB: INSERT INTO application_file
     
-    rect rgb(35, 42, 35)
+    rect rgb(200, 255, 200)
     Note right of Service: ✅ Same transaction!
     Service->>OutboxTable: INSERT INTO outbox<br/>(eventType: 'document_uploaded')
     Service->>OutboxTable: INSERT INTO outbox<br/>(eventType: 'application_submitted')
@@ -475,15 +475,15 @@ graph TB
     W4 --> DB
     W5 --> DB
     
-    style API fill:#003300
-    style Queue1 fill:#CC5500
-    style Queue2 fill:#CC5500
-    style Queue3 fill:#CC5500
-    style W1 fill:#00004C
-    style W2 fill:#00004C
-    style W3 fill:#00004C
-    style W4 fill:#00004C
-    style W5 fill:#00004C
+    style API fill:#90EE90
+    style Queue1 fill:#FFD700
+    style Queue2 fill:#FFD700
+    style Queue3 fill:#FFD700
+    style W1 fill:#87CEEB
+    style W2 fill:#87CEEB
+    style W3 fill:#87CEEB
+    style W4 fill:#87CEEB
+    style W5 fill:#87CEEB
 ```
 
 **Implementation:**
@@ -747,19 +747,19 @@ graph TB
     BH2_Q --> BH2_W2
     
     BH3_Q --> BH3_W1
-    BH3_Q --> BH3_W2s
+    BH3_Q --> BH3_W2
     BH3_Q --> BH3_W3
     BH3_Q --> BH3_W4
     
-    style BH1_W1 fill:#CC0033
-    style BH1_W2 fill:#CC0033
-    style BH1_W3 fill:#CC0033
-    style BH2_W1 fill:#008000
-    style BH2_W2 fill:#008000
-    style BH3_W1 fill:#00008B
-    style BH3_W2 fill:#00008B
-    style BH3_W3 fill:#00008B
-    style BH3_W4 fill:#00008B
+    style BH1_W1 fill:#FFB6C1
+    style BH1_W2 fill:#FFB6C1
+    style BH1_W3 fill:#FFB6C1
+    style BH2_W1 fill:#98FB98
+    style BH2_W2 fill:#98FB98
+    style BH3_W1 fill:#87CEFA
+    style BH3_W2 fill:#87CEFA
+    style BH3_W3 fill:#87CEFA
+    style BH3_W4 fill:#87CEFA
 ```
 
 **Implementation:**
@@ -1003,9 +1003,9 @@ graph TB
     ReadDB --> Cache
     Cache --> Client2
     
-    style WriteDB fill:#CC0033
-    style ReadDB fill:#006400
-    style Cache fill:#CC8800
+    style WriteDB fill:#FFB6C1
+    style ReadDB fill:#90EE90
+    style Cache fill:#FFD700
 ```
 
 **Implementation:**

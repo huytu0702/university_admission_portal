@@ -41,7 +41,7 @@ sequenceDiagram
     
     Note over Service,EmailService: Xử lý tuần tự - Đồng bộ
     
-    rect rgb(0, 0, 0)
+    rect rgb(255, 200, 200)
     Note right of Service: ⚠️ Blocking Operation #1
     Service->>DocService: verifyDocument(fileId)
     DocService->>DocService: Scan virus (blocking)
@@ -51,7 +51,7 @@ sequenceDiagram
     Service->>DB: UPDATE application<br/>(status: 'verified')
     end
     
-    rect rgb(0, 0, 0)
+    rect rgb(255, 200, 200)
     Note right of Service: ⚠️ Blocking Operation #2
     Service->>PayService: createPaymentIntent(applicationId)
     PayService->>PayService: Call external payment API (blocking)
@@ -61,7 +61,7 @@ sequenceDiagram
     Service->>DB: UPDATE application<br/>(status: 'payment_initiated')
     end
     
-    rect rgb(0, 0, 0)
+    rect rgb(255, 200, 200)
     Note right of Service: ⚠️ Blocking Operation #3
     Service->>EmailService: sendConfirmationEmail(email)
     EmailService->>EmailService: Connect to SMTP (blocking)
