@@ -28,5 +28,8 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@sourcegraph/amp": "^0.0.1764835291-gd2c695"
   }
 }
