@@ -1,0 +1,30 @@
+{
+  "timestamp": "2025-12-05T17:28:48.927Z",
+  "config": {
+    "duration": 60,
+    "connections": 50,
+    "pipelining": 1
+  },
+  "results": {
+    "latency": {
+      "avg": 306.17,
+      "p50": 284,
+      "p95": 306.17,
+      "p99": 628,
+      "max": 1119
+    },
+    "throughput": {
+      "avg": 210471.74,
+      "total": 12628008
+    },
+    "requests": {
+      "total": 9774,
+      "average": 162.9,
+      "sent": 9824
+    },
+    "errors": 0,
+    "timeouts": 0,
+    "duration": 60.27
+  },
+  "patternsEnabled": {}
+}

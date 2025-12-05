@@ -22,7 +22,13 @@
     "load-test:quick": "cd load-tests && powershell -ExecutionPolicy Bypass -File .\\run-all-tests.ps1 -TestSuite quick",
     "load-test:spike": "cd load-tests && powershell -ExecutionPolicy Bypass -File .\\run-all-tests.ps1 -TestSuite spike",
     "load-test:sustained": "cd load-tests && powershell -ExecutionPolicy Bypass -File .\\run-all-tests.ps1 -TestSuite sustained",
-    "load-test:pattern": "cd load-tests && powershell -ExecutionPolicy Bypass -File .\\run-all-tests.ps1 -TestSuite pattern"
+    "load-test:pattern": "cd load-tests && powershell -ExecutionPolicy Bypass -File .\\run-all-tests.ps1 -TestSuite pattern",
+    "benchmark": "npx ts-node scripts/benchmark-applications.ts",
+    "benchmark:quick": "npx ts-node scripts/benchmark-applications.ts -d 10 -c 5",
+    "benchmark:full": "npx ts-node scripts/benchmark-applications.ts -d 60 -c 50",
+    "benchmark:compare": "npx ts-node scripts/compare-benchmarks.ts --latest",
+    "patterns:on": "npx ts-node scripts/toggle-patterns.ts --enable",
+    "patterns:off": "npx ts-node scripts/toggle-patterns.ts --disable"
   },
   "dependencies": {
     "@nestjs/bull": "^11.0.1",
@@ -59,6 +65,7 @@
     "@nestjs/cli": "^11.0.0",
     "@nestjs/schematics": "^11.0.0",
     "@nestjs/testing": "^11.0.1",
+    "@types/autocannon": "^7.12.7",
     "@types/bcrypt": "^6.0.0",
     "@types/express": "^5.0.0",
     "@types/helmet": "^0.0.48",
@@ -67,6 +74,7 @@
     "@types/passport": "^1.0.17",
     "@types/passport-jwt": "^4.0.1",
     "@types/supertest": "^6.0.2",
+    "autocannon": "^8.0.0",
     "axios": "^1.13.2",
     "eslint": "^9.18.0",
     "eslint-config-prettier": "^10.0.1",

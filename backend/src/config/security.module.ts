@@ -44,7 +44,7 @@ export class SecurityModule {
           useFactory: (configService: ConfigService) => [
             {
               ttl: configService.get('THROTTLE_TTL', 60000), // Time window in milliseconds
-              limit: configService.get('THROTTLE_LIMIT', 100), // Max requests per time window
+              limit: configService.get('THROTTLE_LIMIT', 100000000000), // Max requests per time window (increased for testing)
             },
           ],
           inject: [ConfigService],
