@@ -10,7 +10,7 @@ npm run patterns:on
 npm run benchmark:idempotency
 
 # 3. Test spike load (handles concurrent traffic)
-npm run benchmark:spike
+npx ts-node scripts/benchmark-spike.ts --connections 1000
 
 # 4. Disable patterns and compare
 npm run patterns:off
