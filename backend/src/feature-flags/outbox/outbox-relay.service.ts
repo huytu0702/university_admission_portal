@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { QueueProducerService } from '../queue/queue-producer.service';
+import { FeatureFlagsService } from '../feature-flags.service';
 
 @Injectable()
 export class OutboxRelayService {
@@ -9,9 +10,15 @@ export class OutboxRelayService {
   constructor(
     private prisma: PrismaService,
     private queueProducerService: QueueProducerService,
-  ) {}
+    private featureFlagsService: FeatureFlagsService,
+  ) { }
 
   async processOutbox(): Promise<void> {
+    // Safety check: Ensure outbox pattern is enabled
+    const outboxFlag = await this.featureFlagsService.getFlag('outbox-pattern');
+    if (!outboxFlag || !outboxFlag.enabled) {
+      return; // Skip if disabled
+    }
     // Fetch unprocessed outbox messages (limit to 100 per batch to prevent overload)
     const outboxMessages = await this.prisma.outbox.findMany({
       where: { processedAt: null },
@@ -23,7 +30,7 @@ export class OutboxRelayService {
       try {
         // Process the message based on its event type
         await this.processMessage(message);
-        
+
         // Mark the message as processed
         await this.prisma.outbox.update({
           where: { id: message.id },
@@ -38,7 +45,7 @@ export class OutboxRelayService {
 
   private async processMessage(message: any): Promise<void> {
     const payload = JSON.parse(message.payload);
-    
+
     switch (message.eventType) {
       // 📄 Step 1: Document uploaded → Start verification
       case 'document_uploaded':
@@ -75,7 +82,7 @@ export class OutboxRelayService {
         // Mark application as completed
         await this.prisma.application.update({
           where: { id: payload.applicationId },
-          data: { 
+          data: {
             status: 'completed',
             progress: 100,
             updatedAt: new Date(),

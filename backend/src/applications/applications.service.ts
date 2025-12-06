@@ -9,6 +9,7 @@ import { EmailService } from '../email/email.service';
 import { IdempotencyService } from '../feature-flags/idempotency/idempotency.service';
 import { QueueProducerService } from '../feature-flags/queue/queue-producer.service';
 import { ApplicationReadService } from '../read-model/application-read.service';
+import { FeatureFlagsService } from '../feature-flags/feature-flags.service';
 
 export type CreateApplicationDto = {
   personalStatement?: string;
@@ -28,6 +29,7 @@ export class ApplicationsService {
     private idempotencyService: IdempotencyService,
     private queueProducerService: QueueProducerService,
     private applicationReadService: ApplicationReadService,
+    private featureFlagsService: FeatureFlagsService,
   ) {
     // Create upload directory if it doesn't exist
     this.uploadDir = this.configService.get<string>('UPLOAD_DIR', './uploads');
@@ -35,6 +37,7 @@ export class ApplicationsService {
       fs.mkdirSync(this.uploadDir, { recursive: true });
     }
   }
+
 
   async createApplication(userId: string, dto: CreateApplicationDto, idempotencyKey?: string) {
     // Execute with idempotency if key is provided
@@ -58,6 +61,10 @@ export class ApplicationsService {
         const validatedFiles = dto.files && dto.files.length > 0
           ? await this.validateAndStoreFiles(dto.files)
           : [];
+
+        // Check if outbox pattern is enabled
+        const outboxFlag = await this.featureFlagsService.getFlag('outbox-pattern');
+        const useOutbox = outboxFlag?.enabled ?? false;
 
         // Create the application with initial status
         const application = await this.prisma.$transaction(async (tx) => {
@@ -85,56 +92,82 @@ export class ApplicationsService {
             }
           }
 
-          // Create outbox message for document verification
-          if (validatedFiles.length > 0) {
+          // Only create outbox messages if outbox pattern is enabled
+          if (useOutbox) {
+            // Create outbox message for document verification
+            if (validatedFiles.length > 0) {
+              await tx.outbox.create({
+                data: {
+                  eventType: 'document_uploaded',
+                  payload: JSON.stringify({
+                    applicationId: newApplication.id,
+                    applicationFileIds: validatedFiles.map(f => f.path),
+                  }),
+                },
+              });
+            }
+
+            // Create outbox message for payment processing
             await tx.outbox.create({
               data: {
-                eventType: 'document_uploaded',
+                eventType: 'application_submitted',
                 payload: JSON.stringify({
                   applicationId: newApplication.id,
-                  applicationFileIds: validatedFiles.map(f => f.path), // Store file paths for processing
                 }),
               },
             });
           }
 
-          // Create outbox message for payment processing
-          await tx.outbox.create({
-            data: {
-              eventType: 'application_submitted',
-              payload: JSON.stringify({
-                applicationId: newApplication.id,
-              }),
-            },
-          });
-
           return newApplication;
         });
 
-        // After creating the application, enqueue ONLY the first job
-        // Sequential workflow: verify → payment → email
-        // Each step triggers the next one
-        
-        // Enqueue document verification job if files were uploaded
-        if (validatedFiles.length > 0) {
-          await this.queueProducerService.addVerifyDocumentJob(
-            `verify-${application.id}`,
-            {
-              applicationId: application.id,
-              applicationFileIds: validatedFiles.map(f => f.path),
-            }
-          );
-        } else {
-          // If no files, skip verification and go directly to payment
-          // Create an Outbox event to trigger payment job
-          await this.prisma.outbox.create({
-            data: {
-              eventType: 'document_verified',
-              payload: JSON.stringify({
+        // After creating the application, enqueue jobs based on mode
+        if (useOutbox) {
+          // Outbox mode: Rely on OutboxRelay to process messages and trigger jobs
+          this.logger.log(`Outbox pattern enabled, messages created for app: ${application.id}`);
+
+          // Enqueue document verification job if files were uploaded
+          if (validatedFiles.length > 0) {
+            await this.queueProducerService.addVerifyDocumentJob(
+              `verify-${application.id}`,
+              {
                 applicationId: application.id,
-              }),
-            },
-          });
+                applicationFileIds: validatedFiles.map(f => f.path),
+              }
+            );
+          } else {
+            // If no files, skip verification and go directly to payment
+            // Create an Outbox event to trigger payment job
+            await this.prisma.outbox.create({
+              data: {
+                eventType: 'document_verified',
+                payload: JSON.stringify({
+                  applicationId: application.id,
+                }),
+              },
+            });
+          }
+        } else {
+          // Direct queue mode (no outbox): Enqueue jobs directly
+          this.logger.log(`Outbox pattern disabled, using direct queue mode for app: ${application.id}`);
+
+          if (validatedFiles.length > 0) {
+            await this.queueProducerService.addVerifyDocumentJob(
+              `verify-${application.id}`,
+              {
+                applicationId: application.id,
+                applicationFileIds: validatedFiles.map(f => f.path),
+              }
+            );
+          } else {
+            // No documents to verify, go straight to payment
+            await this.queueProducerService.addCreatePaymentJob(
+              `payment-${application.id}`,
+              {
+                applicationId: application.id,
+              }
+            );
+          }
         }
 
         // Warm read model cache asynchronously
@@ -151,6 +184,7 @@ export class ApplicationsService {
       }
     );
   }
+
 
   private async validateAndStoreFiles(files: Array<import('multer').File>): Promise<Array<{
     originalName: string,
