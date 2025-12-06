@@ -121,7 +121,7 @@ async function runBenchmark(config: BenchmarkConfig): Promise<BenchmarkResult> {
             setupClient: (client) => {
                 // Generate unique idempotency key for each request
                 client.setHeaders({
-                    'X-Idempotency-Key': `benchmark-${Date.now()}-${Math.random().toString(36).substring(7)}`,
+                    'idempotency-key': `benchmark-${Date.now()}-${Math.random().toString(36).substring(7)}`,
                 });
             },
         }, (err, result) => {

@@ -9,7 +9,7 @@ export class IdempotencyService {
   constructor(
     private prisma: PrismaService,
     private featureFlagsService: FeatureFlagsService,
-  ) {}
+  ) { }
 
   async executeWithIdempotency<T>(
     idempotencyKey: string | undefined,
@@ -17,15 +17,21 @@ export class IdempotencyService {
   ): Promise<T> {
     // If no idempotency key is provided, just execute the operation
     if (!idempotencyKey) {
+      this.logger.debug('No idempotency key provided, executing operation');
       return await operation();
     }
+
+    this.logger.debug(`Idempotency key received: ${idempotencyKey}`);
 
     // Check if idempotency feature is enabled
     const flag = await this.featureFlagsService.getFlag('idempotency-key');
     if (!flag || !flag.enabled) {
       // If feature is disabled, execute operation directly
+      this.logger.debug('Idempotency feature is disabled, executing operation');
       return await operation();
     }
+
+    this.logger.log(`Idempotency feature enabled, checking key: ${idempotencyKey}`);
 
     // Look up if we already processed this idempotency key
     const existingRecord = await this.prisma.idempotencyKey.findUnique({
@@ -35,7 +41,7 @@ export class IdempotencyService {
     if (existingRecord) {
       // If we already processed this request, return the cached result
       this.logger.log(`Returning cached result for idempotency key: ${idempotencyKey}`);
-      
+
       // Parse the stored result
       const result = JSON.parse(existingRecord.result);
       return result as T;
@@ -44,7 +50,7 @@ export class IdempotencyService {
     try {
       // Execute the operation
       const result = await operation();
-      
+
       // Store the result with the idempotency key
       await this.prisma.idempotencyKey.create({
         data: {

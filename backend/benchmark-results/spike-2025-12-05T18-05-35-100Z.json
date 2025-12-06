@@ -1,0 +1,24 @@
+{
+  "timestamp": "2025-12-05T18:05:35.095Z",
+  "config": {
+    "connections": 200,
+    "duration": 15
+  },
+  "results": {
+    "totalRequests": 2343,
+    "successfulRequests": 2343,
+    "errors": 0,
+    "timeouts": 0,
+    "errorRate": 0,
+    "successRate": 100,
+    "avgLatency": 1338.66,
+    "maxLatency": 2157
+  },
+  "patternsEnabled": {
+    "queueBasedLoadLeveling": false,
+    "bulkheadIsolation": false,
+    "circuitBreaker": false
+  },
+  "verdict": "GOOD",
+  "message": "✅ System handled spike without patterns (lucky or low load)"
+}

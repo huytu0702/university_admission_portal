@@ -28,7 +28,9 @@
     "benchmark:full": "npx ts-node scripts/benchmark-applications.ts -d 60 -c 50",
     "benchmark:compare": "npx ts-node scripts/compare-benchmarks.ts --latest",
     "patterns:on": "npx ts-node scripts/toggle-patterns.ts --enable",
-    "patterns:off": "npx ts-node scripts/toggle-patterns.ts --disable"
+    "patterns:off": "npx ts-node scripts/toggle-patterns.ts --disable",
+    "benchmark:idempotency": "npx ts-node scripts/benchmark-idempotency.ts",
+    "benchmark:spike": "npx ts-node scripts/benchmark-spike.ts"
   },
   "dependencies": {
     "@nestjs/bull": "^11.0.1",
