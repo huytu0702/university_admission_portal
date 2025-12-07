@@ -1,0 +1,39 @@
+{
+  "timestamp": "2025-12-07T07:55:16.339Z",
+  "config": {
+    "connections": 10,
+    "duration": 3
+  },
+  "httpResults": {
+    "totalRequests": 710,
+    "successfulRequests": 710,
+    "errors": 0,
+    "timeouts": 0,
+    "errorRate": 0,
+    "successRate": 100,
+    "avgLatency": 42.34,
+    "maxLatency": 98
+  },
+  "processingResults": {
+    "totalProcessed": 0,
+    "completedApplications": 0,
+    "failedApplications": 0,
+    "timeoutApplications": 0,
+    "avgCompletionTime": 0,
+    "maxCompletionTime": 0,
+    "avgTotalProcessingTime": 0,
+    "completionRate": 0
+  },
+  "queueMetrics": {
+    "maxQueueDepth": 0,
+    "avgProcessingDelay": 0,
+    "queueDrainTime": 47
+  },
+  "patternsEnabled": {
+    "queueBasedLoadLeveling": true,
+    "bulkheadIsolation": true,
+    "circuitBreaker": true
+  },
+  "verdict": "FAILED",
+  "message": "❌ Processing bottlenecks - queue overwhelmed or workers failing"
+}

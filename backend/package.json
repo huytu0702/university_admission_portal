@@ -30,7 +30,11 @@
     "patterns:on": "npx ts-node scripts/toggle-patterns.ts --enable",
     "patterns:off": "npx ts-node scripts/toggle-patterns.ts --disable",
     "benchmark:idempotency": "npx ts-node scripts/benchmark-idempotency.ts",
-    "benchmark:spike": "npx ts-node scripts/benchmark-spike.ts"
+    "benchmark:spike": "npx ts-node scripts/benchmark-spike.ts",
+    "benchmark:cache": "npx ts-node scripts/benchmark-cache.ts",
+    "benchmark:circuit": "npx ts-node scripts/benchmark-circuit-breaker.ts",
+    "benchmark:workers": "npx ts-node scripts/benchmark-workers.ts",
+    "benchmark:all": "npm run benchmark:spike && npm run benchmark:idempotency && npm run benchmark:cache && npm run benchmark:workers"
   },
   "dependencies": {
     "@nestjs/bull": "^11.0.1",

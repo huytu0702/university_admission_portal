@@ -1,0 +1,23 @@
+{
+  "timestamp": "2025-12-07T08:41:31.732Z",
+  "config": {
+    "totalRequests": 50,
+    "warmupRequests": 10
+  },
+  "patternsEnabled": {
+    "cacheAside": true,
+    "cqrsLite": true
+  },
+  "results": {
+    "coldReadLatencies": "[10 samples]",
+    "warmReadLatencies": "[50 samples]",
+    "avgColdLatency": 8.7,
+    "avgWarmLatency": 7.04,
+    "p95ColdLatency": 10,
+    "p95WarmLatency": 8,
+    "cacheHitRate": 0,
+    "latencyImprovement": 19.080459770114935
+  },
+  "verdict": "DEGRADED",
+  "message": "⚠️  Cache showing modest improvement: 19.1%"
+}
