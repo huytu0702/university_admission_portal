@@ -657,15 +657,6 @@ export class DlqService {
 }
 ```
 
-**Retry Strategy:**
-
-| Attempt | Delay | Total Elapsed |
-|---------|-------|---------------|
-| 1 | 0s | 0s |
-| 2 | 2s | 2s |
-| 3 | 4s | 6s |
-| 4 | 8s | 14s |
-| Failed | → DLQ | - |
 
 **Benefits:**
 - ✅ Handles transient errors automatically
