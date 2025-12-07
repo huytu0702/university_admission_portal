@@ -85,10 +85,12 @@ Gửi 50 requests liên tiếp có cùng `Idempotency-Key` để kiểm tra kh�
 | Metric | Patterns OFF | Patterns ON | Đánh giá |
 |--------|-------------|-------------|----------|
 | **Execution Mode** | Synchronous | Parallel Workers | ✅ Tận dụng đa luồng/đa servers. |
-| **Throughput** | ~20 jobs/sec | ~5.8 - 25 jobs/sec* | ✅ Xử lý ổn định kể cả khi hàng đợi đang đầy. |
-| **Scalability** | Fixed (1 thread) | Auto-scale (3-8 workers) | ✅ Worker pool tự động scale lên 8 workers để xử lý backlog từ spike test. |
+| **Throughput** | ~5.5 jobs/sec | ~6.7 jobs/sec | ✅ Xử lý song song cho hiệu năng cao hơn. |
+| **Scalability** | Fixed (1 thread) | Auto-scale (3-8 workers) | ✅ Worker pool tự động scale theo tải. |
 
-> **Ghi chú:** Ở bài test Patterns ON, throughput đo được thấp hơn (5.8) do hệ thống đang phải xử lý hàng nghìn jobs tồn đọng từ bài test Spike trước đó. Tuy nhiên, Queues Metrics cho thấy **37,017** jobs đã được hoàn thành, chứng tỏ khả năng xử lý background mạnh mẽ.
+> **Ghi chú:**
+> *   **Job:** Là một tác vụ nền cụ thể (ví dụ: `verify_document`, `create_payment`, `send_email`). Một hồ sơ nộp vào sẽ sinh ra 3 jobs này.
+> *   Kết quả thực tế cho thấy xử lý bất đồng bộ (Async) nhanh hơn ~20% so với đồng bộ (Sync) ngay cả ở tải thấp. Khả năng scale sẽ càng rõ rệt hơn khi backlog lớn.
 
 ---
 
