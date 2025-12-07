@@ -53,6 +53,7 @@ sequenceDiagram
     rect rgb(200, 255, 200)
     Note right of Service: ✅ Pattern: Outbox
     Service->>Outbox: INSERT outbox event<br/>(document_uploaded)
+    Service->>Outbox: INSERT outbox event<br/>(application_submitted)
     end
     
     Service->>DB: COMMIT TRANSACTION
@@ -260,899 +261,7 @@ export class IdempotencyService {
 - ✅ Cached responses for repeated requests
 
 ---
-
-### 2. Outbox Pattern
-
-```mermaid
-sequenceDiagram
-    participant Service as ApplicationsService
-    participant DB as PostgreSQL
-    participant OutboxTable as Outbox Table
-    participant Scheduler as OutboxRelayScheduler (Cron)
-    participant Queue as Redis Queue
-    
-    Note over Service,Queue: Transactional Messaging with Outbox Pattern
-    
-    Service->>DB: BEGIN TRANSACTION
-    Service->>DB: INSERT INTO application
-    Service->>DB: INSERT INTO application_file
-    
-    rect rgb(200, 255, 200)
-    Note right of Service: ✅ Same transaction!
-    Service->>OutboxTable: INSERT INTO outbox<br/>(eventType: 'document_uploaded')
-    end
-    
-    Service->>DB: COMMIT TRANSACTION
-    Note over Service,DB: ✅ Atomic: both data + events committed together
-    
-    Service-->>Service: Return to client (fast!)
-    
-    Note over Scheduler,Queue: Background Relay Process
-    
-    loop Every 2 seconds
-        Scheduler->>OutboxTable: SELECT * FROM outbox<br/>WHERE processedAt IS NULL<br/>LIMIT 100
-        OutboxTable-->>Scheduler: Unprocessed events
-        
-        loop For each event
-            alt Event: document_uploaded
-                Scheduler->>Queue: Enqueue verify_document job
-            else Event: document_verified
-                Scheduler->>Queue: Enqueue create_payment job
-            else Event: payment_completed
-                Scheduler->>Queue: Enqueue send_email job
-            else Event: email_sent
-                Scheduler->>DB: UPDATE application<br/>(status: 'completed')
-            end
-            
-            Scheduler->>OutboxTable: UPDATE outbox<br/>SET processedAt = NOW()<br/>WHERE id = ?
-        end
-    end
-```
-
-**Implementation:**
-
-```typescript
-// Step 1: Create application with outbox events in same transaction
-async createApplication(userId: string, dto: CreateApplicationDto) {
-  const application = await this.prisma.$transaction(async (tx) => {
-    // Create application
-    const newApp = await tx.application.create({
-      data: { userId, personalStatement: dto.personalStatement, status: 'submitted' },
-    });
-
-    // Create files
-    for (const file of validatedFiles) {
-      await tx.applicationFile.create({
-        data: { applicationId: newApp.id, ...file },
-      });
-    }
-
-    // ✅ Create outbox events in SAME transaction
-    await tx.outbox.create({
-      data: {
-        eventType: 'document_uploaded',
-        payload: JSON.stringify({ applicationId: newApp.id, files: [...] }),
-      },
-    });
-
-    return newApp;
-  });
-
-  return { applicationId: application.id, statusUrl: `/applications/${application.id}/status` };
-}
-
-// Step 2: Background relay service
-@Injectable()
-export class OutboxRelayService {
-  async processOutbox() {
-    const messages = await this.prisma.outbox.findMany({
-      where: { processedAt: null },
-      orderBy: { createdAt: 'asc' },
-      take: 100,
-    });
-
-    for (const message of messages) {
-      try {
-        await this.processMessage(message);
-        
-        // Mark as processed
-        await this.prisma.outbox.update({
-          where: { id: message.id },
-          data: { processedAt: new Date() },
-        });
-      } catch (error) {
-        this.logger.error(`Failed to process outbox message ${message.id}`, error);
-      }
-    }
-  }
-
-  private async processMessage(message: any) {
-    const payload = JSON.parse(message.payload);
-    
-    switch (message.eventType) {
-      case 'document_uploaded':
-        await this.queueProducer.addVerifyDocumentJob(`verify_${message.id}`, payload);
-        break;
-      case 'document_verified':
-        await this.queueProducer.addCreatePaymentJob(`payment_${message.id}`, payload);
-        break;
-      case 'payment_completed':
-        await this.queueProducer.addSendEmailJob(`email_${message.id}`, payload);
-        break;
-      case 'email_sent':
-        await this.prisma.application.update({
-          where: { id: payload.applicationId },
-          data: { status: 'completed', progress: 100 },
-        });
-        break;
-    }
-  }
-}
-
-// Step 3: Cron scheduler
-@Injectable()
-export class OutboxRelayScheduler {
-  @Cron('*/2 * * * * *') // Every 2 seconds
-  async handleCron() {
-    await this.outboxRelayService.processOutbox();
-  }
-}
-```
-
-**Benefits:**
-- ✅ Guaranteed message delivery (transactional)
-- ✅ At-least-once delivery semantics
-- ✅ Data consistency between DB and events
-- ✅ No message loss even if queue is down
-
----
-
-### 3. Queue-Based Load Leveling + Competing Consumers
-
-Hệ thống sử dụng **BullMQ (Redis-based queue)** để smooths out traffic spikes và xử lý công việc nền một cách hiệu quả. Competing Consumers pattern cho phép nhiều workers cùng xử lý jobs từ cùng một queue, tăng throughput và khả năng chịu tải.
-
-#### 3.1. Queue Architecture
-
-```mermaid
-graph TB
-    subgraph "Client Layer - Spiky Traffic"
-        C1[👤 Request 1]
-        C2[👤 Request 2]
-        C3[👤 Request 3]
-        C100[👤 Request 100...]
-    end
-    
-    subgraph "API Layer - Fast Response <500ms"
-        API[ApplicationsService]
-        Producer[QueueProducerService]
-    end
-    
-    subgraph "Queue Layer - BullMQ/Redis Buffer"
-        Q1["📋 verify_document<br/>Priority: High (1)<br/>Retry: 3x, Exp backoff 2s"]
-        Q2["💳 create_payment<br/>Priority: Highest (0)<br/>Retry: 3x, Exp backoff 2s"]
-        Q3["📧 send_email<br/>Priority: Low (2)<br/>Retry: 2x, Exp backoff 1s"]
-    end
-    
-    subgraph "Worker Pool - Competing Consumers"
-        subgraph "Doc Verification Pool (Concurrency: 3)"
-            DW1[Worker 1]
-            DW2[Worker 2]
-            DW3[Worker 3]
-        end
-        
-        subgraph "Payment Pool (Concurrency: 5)"
-            PW1[Worker 1]
-            PW2[Worker 2]
-            PW3[Worker 3]
-            PW4[Worker 4]
-            PW5[Worker 5]
-        end
-        
-        subgraph "Email Pool (Concurrency: 10)"
-            EW1[Worker 1-10...]
-        end
-    end
-    
-    subgraph "Storage"
-        DB[(PostgreSQL)]
-        FS[File System]
-    end
-    
-    C1 & C2 & C3 & C100 -->|POST| API
-    API -->|Enqueue jobs| Producer
-    
-    Producer -->|addVerifyDocumentJob| Q1
-    Producer -->|addCreatePaymentJob| Q2
-    Producer -->|addSendEmailJob| Q3
-    
-    API -->|202 Accepted| C1
-    
-    Q1 -.->|Poll & Process| DW1 & DW2 & DW3
-    Q2 -.->|Poll & Process| PW1 & PW2 & PW3 & PW4 & PW5
-    Q3 -.->|Poll & Process| EW1
-    
-    DW1 & DW2 & DW3 --> DB
-    DW1 & DW2 & DW3 --> FS
-    PW1 & PW2 & PW3 & PW4 & PW5 --> DB
-    EW1 --> DB
-    
-    style API fill:#90EE90
-    style Producer fill:#98FB98
-    style Q1 fill:#FFD700
-    style Q2 fill:#FFB347
-    style Q3 fill:#FFDAB9
-    style DW1 fill:#87CEEB
-    style DW2 fill:#87CEEB
-    style DW3 fill:#87CEEB
-    style PW1 fill:#DDA0DD
-    style PW2 fill:#DDA0DD
-    style PW3 fill:#DDA0DD
-    style PW4 fill:#DDA0DD
-    style PW5 fill:#DDA0DD
-    style EW1 fill:#F0E68C
-```
-
-#### 3.2. Producer - QueueProducerService
-
-Service này chịu trách nhiệm enqueue jobs vào các Redis queues với configuration phù hợp.
-
-```typescript
-// backend/src/feature-flags/queue/queue-producer.service.ts
-
-@Injectable()
-export class QueueProducerService {
-  constructor(
-    @InjectQueue('verify_document') private verifyDocumentQueue: Queue,
-    @InjectQueue('create_payment') private createPaymentQueue: Queue,
-    @InjectQueue('send_email') private sendEmailQueue: Queue,
-    private bulkheadService: BulkheadService,
-    private featureFlagsService: FeatureFlagsService,
-  ) {}
-
-  async addVerifyDocumentJob(
-    jobId: string,
-    data: any,
-    priority: JobPriority = 'normal'
-  ): Promise<void> {
-    // Check if bulkhead isolation is enabled
-    const flag = await this.featureFlagsService.getFlag('bulkhead-isolation');
-    
-    if (flag?.enabled) {
-      // Execute with bulkhead isolation
-      await this.bulkheadService.executeInBulkhead('verify_document', async () => {
-        await this.verifyDocumentQueue.add('verify_document', data, {
-          jobId,
-          priority: this.mapPriority(priority), // 0=critical, 1=high, 2=normal, 3=low
-          attempts: 3,
-          backoff: {
-            type: 'exponential',
-            delay: 2000, // 2s, 4s, 8s
-          },
-        });
-      });
-    } else {
-      // Direct enqueue without bulkhead
-      await this.verifyDocumentQueue.add('verify_document', data, {
-        jobId,
-        priority: this.mapPriority(priority),
-      });
-    }
-  }
-
-  async addCreatePaymentJob(
-    jobId: string,
-    data: any,
-    priority: JobPriority = 'normal'
-  ): Promise<void> {
-    const flag = await this.featureFlagsService.getFlag('bulkhead-isolation');
-    
-    if (flag?.enabled) {
-      await this.bulkheadService.executeInBulkhead('create_payment', async () => {
-        await this.createPaymentQueue.add('create_payment', data, {
-          jobId,
-          priority: this.mapPriority(priority),
-          attempts: 3,
-          backoff: {
-            type: 'exponential',
-            delay: 2000,
-          },
-        });
-      });
-    } else {
-      await this.createPaymentQueue.add('create_payment', data, {
-        jobId,
-        priority: this.mapPriority(priority),
-      });
-    }
-  }
-
-  async addSendEmailJob(
-    jobId: string,
-    data: any,
-    priority: JobPriority = 'normal'
-  ): Promise<void> {
-    const flag = await this.featureFlagsService.getFlag('bulkhead-isolation');
-    
-    if (flag?.enabled) {
-      await this.bulkheadService.executeInBulkhead('send_email', async () => {
-        await this.sendEmailQueue.add('send_email', data, {
-          jobId,
-          priority: this.mapPriority(priority),
-          attempts: 2, // Email has fewer retries
-          backoff: {
-            type: 'exponential',
-            delay: 1000,
-          },
-        });
-      });
-    } else {
-      await this.sendEmailQueue.add('send_email', data, {
-        jobId,
-        priority: this.mapPriority(priority),
-      });
-    }
-  }
-
-  private mapPriority(priority: JobPriority): number {
-    switch (priority) {
-      case 'low': return 3;
-      case 'normal': return 2;
-      case 'high': return 1;
-      case 'critical': return 0;
-      default: return 2;
-    }
-  }
-}
-```
-
-**Job Priority Levels:**
-
-| Priority | Numeric Value | Use Case |
-|----------|---------------|----------|
-| **critical** | 0 | Emergency processing, SLA violations |
-| **high** | 1 | Payment processing, time-sensitive tasks |
-| **normal** | 2 | Document verification, standard workflows |
-| **low** | 3 | Bulk operations, non-urgent tasks |
-
-#### 3.3. Consumer - Worker Implementation
-
-##### 3.3.1. Base Worker Class
-
-```typescript
-// backend/src/feature-flags/workers/worker-base.ts
-
-export abstract class WorkerBase {
-  protected readonly logger = new Logger(this.constructor.name);
-
-  constructor(protected prisma: PrismaService) {}
-
-  abstract processJob(jobData: JobData): Promise<any>;
-
-  async processJobWithRetry(jobData: JobData, job: Job): Promise<any> {
-    const attemptNumber = job.attemptsMade + 1;
-    
-    try {
-      const result = await this.processJob(jobData);
-      this.logger.log(`Job ${job.id} completed successfully on attempt ${attemptNumber}`);
-      return result;
-    } catch (error) {
-      this.logger.error(
-        `Job ${job.id} failed on attempt ${attemptNumber} of ${job.opts.attempts || 1}: ${error.message}`,
-        error.stack
-      );
-      
-      // Re-throw to trigger BullMQ's retry mechanism
-      throw error;
-    }
-  }
-
-  async updateApplicationStatus(applicationId: string, status: string) {
-    let progress = 0;
-    
-    switch (status) {
-      case 'submitted': progress = 25; break;
-      case 'verifying': progress = 30; break;
-      case 'verified': progress = 50; break;
-      case 'verification_failed': progress = 25; break;
-      case 'processing_payment': progress = 55; break;
-      case 'payment_initiated': progress = 75; break;
-      case 'payment_failed': progress = 50; break;
-      case 'completed': progress = 100; break;
-    }
-
-    return this.prisma.application.update({
-      where: { id: applicationId },
-      data: { status, progress },
-    });
-  }
-}
-```
-
-##### 3.3.2. Document Verification Worker
-
-```typescript
-// backend/src/feature-flags/workers/document-verification.worker.ts
-
-@Processor('verify_document')
-export class DocumentVerificationWorker extends WorkerBase {
-  constructor(
-    prisma: PrismaService,
-    private documentVerificationService: DocumentVerificationService,
-  ) {
-    super(prisma);
-  }
-
-  async processJob(jobData: VerifyDocumentJobData): Promise<any> {
-    const { applicationId, applicationFileIds } = jobData;
-
-    // Update status to 'verifying'
-    await this.updateApplicationStatus(applicationId, 'verifying');
-
-    try {
-      // Verify each document
-      for (const filePath of applicationFileIds) {
-        const applicationFiles = await this.prisma.applicationFile.findMany({
-          where: { applicationId, filePath },
-        });
-
-        for (const file of applicationFiles) {
-          await this.documentVerificationService.verifyDocument(file.id);
-        }
-      }
-
-      // Update status to 'verified'
-      await this.updateApplicationStatus(applicationId, 'verified');
-
-      // Emit event to trigger next workflow step (payment)
-      await this.prisma.outbox.create({
-        data: {
-          eventType: 'document_verified',
-          payload: JSON.stringify({ applicationId }),
-        },
-      });
-      this.logger.log(`Emitted document_verified event for app: ${applicationId}`);
-
-      return { success: true, applicationId };
-    } catch (error) {
-      await this.updateApplicationStatus(applicationId, 'verification_failed');
-      this.logger.error(`Document verification failed for ${applicationId}: ${error.message}`);
-      throw error;
-    }
-  }
-
-  @Process('verify_document')
-  async processVerifyDocument(job: Job<VerifyDocumentJobData>): Promise<any> {
-    return await this.processJobWithRetry(job.data, job);
-  }
-}
-```
-
-##### 3.3.3. Payment Processing Worker
-
-```typescript
-// backend/src/feature-flags/workers/payment-processing.worker.ts
-
-@Processor('create_payment')
-export class PaymentProcessingWorker extends WorkerBase {
-  constructor(
-    prisma: PrismaService,
-    private paymentService: PaymentService,
-  ) {
-    super(prisma);
-  }
-
-  async processJob(jobData: CreatePaymentJobData): Promise<any> {
-    const { applicationId } = jobData;
-
-    await this.updateApplicationStatus(applicationId, 'processing_payment');
-
-    try {
-      // Create payment intent
-      await this.paymentService.createPaymentIntent({
-        applicationId,
-        amount: 7500, // $75.00 application fee
-        currency: 'usd',
-      });
-
-      await this.updateApplicationStatus(applicationId, 'payment_initiated');
-
-      // Emit event to trigger next workflow step (email)
-      await this.prisma.outbox.create({
-        data: {
-          eventType: 'payment_completed',
-          payload: JSON.stringify({ applicationId }),
-        },
-      });
-      this.logger.log(`Emitted payment_completed event for app: ${applicationId}`);
-
-      return { success: true, applicationId };
-    } catch (error) {
-      await this.updateApplicationStatus(applicationId, 'payment_failed');
-      this.logger.error(`Payment processing failed for ${applicationId}: ${error.message}`);
-      throw error;
-    }
-  }
-
-  @Process('create_payment')
-  async processCreatePayment(job: Job<CreatePaymentJobData>): Promise<any> {
-    return this.processJobWithRetry(job.data, job);
-  }
-}
-```
-
-##### 3.3.4. Email Sending Worker
-
-```typescript
-// backend/src/feature-flags/workers/email-sending.worker.ts
-
-@Processor('send_email')
-export class EmailSendingWorker extends WorkerBase {
-  constructor(
-    prisma: PrismaService,
-    private emailService: EmailService,
-  ) {
-    super(prisma);
-  }
-
-  async processJob(jobData: SendEmailJobData): Promise<any> {
-    const { applicationId, email, template = 'status-update' } = jobData;
-
-    try {
-      // Send email based on template
-      if (template === 'status-update') {
-        const application = await this.prisma.application.findUnique({
-          where: { id: applicationId },
-          include: { user: true }
-        });
-
-        if (application?.user.email) {
-          await this.emailService.sendApplicationStatusUpdate(
-            application.user.email,
-            applicationId,
-            application.status as any
-          );
-        }
-      } else if (template === 'confirmation') {
-        await this.emailService.sendApplicationConfirmation(email, applicationId);
-      }
-
-      await this.updateApplicationStatus(applicationId, 'email_sent');
-
-      // Emit event to mark workflow as complete
-      await this.prisma.outbox.create({
-        data: {
-          eventType: 'email_sent',
-          payload: JSON.stringify({ applicationId }),
-        },
-      });
-      this.logger.log(`Emitted email_sent event for app: ${applicationId}`);
-
-      return { success: true, applicationId, email };
-    } catch (error) {
-      await this.updateApplicationStatus(applicationId, 'email_failed');
-      this.logger.error(`Email sending failed for ${applicationId}: ${error.message}`, error.stack);
-      throw error;
-    }
-  }
-
-  @Process('send_email')
-  async processSendEmail(job: Job<SendEmailJobData>): Promise<any> {
-    return this.processJobWithRetry(job.data, job);
-  }
-}
-```
-
-#### 3.4. Competing Consumers Pattern
-
-```mermaid
-sequenceDiagram
-    participant Q as Redis Queue (verify_document)
-    participant W1 as Worker 1
-    participant W2 as Worker 2
-    participant W3 as Worker 3
-    participant DB as PostgreSQL
-    
-    Note over Q: 100 jobs waiting in queue
-    
-    par Worker 1 processing
-        Q->>W1: Poll job #1
-        W1->>W1: Process job #1
-        W1->>DB: Update status
-        W1->>Q: ACK job #1
-        Q->>W1: Poll job #4
-        W1->>W1: Process job #4
-        W1->>DB: Update status
-        W1->>Q: ACK job #4
-    and Worker 2 processing
-        Q->>W2: Poll job #2
-        W2->>W2: Process job #2
-        W2->>DB: Update status
-        W2->>Q: ACK job #2
-        Q->>W2: Poll job #5
-        W2->>W2: Process job #5
-        W2->>DB: Update status
-        W2->>Q: ACK job #5
-    and Worker 3 processing
-        Q->>W3: Poll job #3
-        W3->>W3: Process job #3
-        W3->>DB: Update status
-        W3->>Q: ACK job #3
-        Q->>W3: Poll job #6
-        W3->>W3: Process job #6
-        W3->>DB: Update status
-        W3->>Q: ACK job #6
-    end
-    
-    Note over Q,DB: ✅ 3 workers process 6 jobs in parallel<br/>Throughput: 3x faster than single worker
-```
-
-#### 3.5. Worker Pool Management
-
-```typescript
-// backend/src/feature-flags/workers/worker-pool.service.ts
-
-@Injectable()
-export class WorkerPoolService implements OnModuleInit {
-  private readonly logger = new Logger(WorkerPoolService.name);
-  private pools: Map<string, WorkerPoolDefinition> = new Map();
-  private poolStats: Map<string, WorkerPoolStats> = new Map();
-  private readonly HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
-
-  constructor(
-    @InjectQueue('verify_document') private verifyDocumentQueue: Queue,
-    @InjectQueue('create_payment') private createPaymentQueue: Queue,
-    @InjectQueue('send_email') private sendEmailQueue: Queue,
-    private featureFlagsService: FeatureFlagsService,
-  ) {}
-
-  async onModuleInit() {
-    const flag = await this.featureFlagsService.getFlag('competing-consumers');
-    
-    if (flag?.enabled) {
-      this.initializePools();
-      this.startHealthMonitoring();
-    }
-  }
-
-  private initializePools() {
-    // Document Verification Pool
-    this.registerPool({
-      poolId: 'pool_verify_document',
-      poolName: 'Document Verification',
-      queueName: 'verify_document',
-      description: 'Processes document verification tasks',
-      concurrency: 3,
-      priority: 1, // High priority
-      enabled: true,
-    });
-
-    // Payment Processing Pool
-    this.registerPool({
-      poolId: 'pool_create_payment',
-      poolName: 'Payment Processing',
-      queueName: 'create_payment',
-      description: 'Handles payment creation and processing',
-      concurrency: 5,
-      priority: 0, // Highest priority
-      enabled: true,
-    });
-
-    // Email Sending Pool
-    this.registerPool({
-      poolId: 'pool_send_email',
-      poolName: 'Email Notifications',
-      queueName: 'send_email',
-      description: 'Sends email notifications',
-      concurrency: 10,
-      priority: 2, // Lower priority
-      enabled: true,
-    });
-  }
-
-  async getPoolStats(poolId: string): Promise<WorkerPoolStats> {
-    const definition = this.pools.get(poolId);
-    const queue = this.getQueue(definition.queueName);
-
-    const [waiting, active, completed, failed, delayed] = await Promise.all([
-      queue.getWaitingCount(),
-      queue.getActiveCount(),
-      queue.getCompletedCount(),
-      queue.getFailedCount(),
-      queue.getDelayedCount(),
-    ]);
-
-    // Calculate throughput (jobs completed in last minute)
-    const recentJobs = await queue.getCompleted(0, 99);
-    const oneMinuteAgo = Date.now() - 60000;
-    const throughput = recentJobs.filter(
-      job => job.finishedOn && job.finishedOn > oneMinuteAgo
-    ).length;
-
-    return {
-      poolId,
-      poolName: definition.poolName,
-      queueName: definition.queueName,
-      enabled: definition.enabled,
-      concurrency: definition.concurrency,
-      waiting,
-      active,
-      completed,
-      failed,
-      delayed,
-      paused: await queue.isPaused(),
-      throughput,
-      avgProcessingTime: 0, // Calculated from job metrics
-      errorRate: 0,
-      lastJobCompletedAt: null,
-      lastJobFailedAt: null,
-    };
-  }
-}
-```
-
-**Worker Pool Configuration:**
-
-| Pool Name | Queue | Concurrency | Priority | Use Case |
-|-----------|-------|-------------|----------|----------|
-| **Payment Processing** | `create_payment` | 5 | 0 (Highest) | Critical payment workflows |
-| **Document Verification** | `verify_document` | 3 | 1 (High) | Security-sensitive document scanning |
-| **Email Notifications** | `send_email` | 10 | 2 (Normal) | Non-critical notifications |
-
-#### 3.6. Dynamic Worker Scaling
-
-```typescript
-// backend/src/feature-flags/workers/worker-scaling.service.ts
-
-@Injectable()
-export class WorkerScalingService implements OnModuleInit {
-  private readonly logger = new Logger(WorkerScalingService.name);
-  private scalingConfigs: Map<string, WorkerScalingConfig> = new Map();
-  private currentWorkerCounts: Map<string, number> = new Map();
-
-  private initializeConfigs() {
-    // Document Verification: Scale 2-10 workers
-    this.scalingConfigs.set('verify_document', {
-      queueName: 'verify_document',
-      minWorkers: 2,
-      maxWorkers: 10,
-      scaleUpThreshold: 50,   // Scale up when >50 jobs waiting
-      scaleDownThreshold: 10, // Scale down when <10 jobs waiting
-      checkInterval: 10000,   // Check every 10 seconds
-      cooldownPeriod: 30000,  // Wait 30s between scaling actions
-    });
-
-    // Payment Processing: Scale 3-15 workers
-    this.scalingConfigs.set('create_payment', {
-      queueName: 'create_payment',
-      minWorkers: 3,
-      maxWorkers: 15,
-      scaleUpThreshold: 30,
-      scaleDownThreshold: 5,
-      checkInterval: 10000,
-      cooldownPeriod: 20000, // Faster scaling for critical payments
-    });
-
-    // Email Sending: Scale 2-8 workers
-    this.scalingConfigs.set('send_email', {
-      queueName: 'send_email',
-      minWorkers: 2,
-      maxWorkers: 8,
-      scaleUpThreshold: 100, // Emails can queue more
-      scaleDownThreshold: 20,
-      checkInterval: 15000,
-      cooldownPeriod: 30000,
-    });
-  }
-
-  private async evaluateScaling() {
-    for (const [queueName, config] of this.scalingConfigs.entries()) {
-      const queue = this.getQueue(queueName);
-      const waitingCount = await queue.getWaitingCount();
-      const currentWorkers = this.currentWorkerCounts.get(queueName) || config.minWorkers;
-
-      // Check cooldown period
-      const lastScaling = this.lastScalingTimes.get(queueName) || 0;
-      if (Date.now() - lastScaling < config.cooldownPeriod) {
-        continue; // Still in cooldown
-      }
-
-      // Scale up logic
-      if (waitingCount >= config.scaleUpThreshold && currentWorkers < config.maxWorkers) {
-        const newWorkerCount = Math.min(currentWorkers + 1, config.maxWorkers);
-        this.scaleWorkers(queueName, newWorkerCount);
-        this.logger.log(
-          `Scaled UP '${queueName}': ${currentWorkers} → ${newWorkerCount} workers ` +
-          `(waiting: ${waitingCount}, threshold: ${config.scaleUpThreshold})`
-        );
-      }
-      // Scale down logic (only if no active jobs)
-      else if (waitingCount <= config.scaleDownThreshold && currentWorkers > config.minWorkers) {
-        const activeCount = await queue.getActiveCount();
-        if (activeCount === 0) {
-          const newWorkerCount = Math.max(currentWorkers - 1, config.minWorkers);
-          this.scaleWorkers(queueName, newWorkerCount);
-          this.logger.log(
-            `Scaled DOWN '${queueName}': ${currentWorkers} → ${newWorkerCount} workers ` +
-            `(waiting: ${waitingCount}, threshold: ${config.scaleDownThreshold})`
-          );
-        }
-      }
-    }
-  }
-}
-```
-
-**Auto-Scaling Diagram:**
-
-```mermaid
-graph LR
-    subgraph "Traffic Pattern"
-        T1[Normal Load<br/>20 jobs/min]
-        T2[Spike!<br/>200 jobs/min]
-        T3[Peak<br/>500 jobs/min]
-        T4[Normal<br/>20 jobs/min]
-    end
-    
-    subgraph "Worker Scaling"
-        W1[2 workers<br/>Min capacity]
-        W2[5 workers<br/>Scaled up]
-        W3[10 workers<br/>Max capacity]
-        W4[2 workers<br/>Scaled down]
-    end
-    
-    subgraph "Queue Depth"
-        Q1[5 jobs waiting]
-        Q2[60 jobs waiting<br/>⚠️ Threshold: 50]
-        Q3[150 jobs waiting<br/>⚠️ Threshold: 50]
-        Q4[8 jobs waiting]
-    end
-    
-    T1 --> Q1 --> W1
-    T2 --> Q2 --> W2
-    T3 --> Q3 --> W3
-    T4 --> Q4 --> W4
-    
-    style T2 fill:#FFB347
-    style T3 fill:#FF6347
-    style Q2 fill:#FFD700
-    style Q3 fill:#FFA500
-    style W2 fill:#90EE90
-    style W3 fill:#32CD32
-```
-
-#### 3.7. Benefits
-
-**Queue-Based Load Leveling:**
-- ✅ **Smooths traffic spikes**: Redis queue buffers incoming requests, preventing system overload
-- ✅ **Prevents database overload**: BullMQ acts as buffer, protects PostgreSQL from connection pool exhaustion
-- ✅ **Graceful degradation**: System remains responsive even under extreme load with 202 Accepted responses
-- ✅ **Job prioritization**: Critical payments (priority 0) processed before non-urgent emails (priority 2)
-
-**Competing Consumers:**
-- ✅ **Parallel processing**: Document verification (3 workers), payment processing (5 workers), email sending (10 workers)
-- ✅ **Horizontal scalability**: Add more worker instances through configuration without code changes
-- ✅ **Fault isolation**: Worker crash doesn't affect others, BullMQ automatically retries failed jobs
-- ✅ **Load distribution**: BullMQ distributes jobs evenly across available worker instances
-
-**Auto-Scaling:**
-- ✅ **Dynamic capacity**: Document verification (2-10 workers), payment processing (3-15 workers), email sending (2-8 workers)
-- ✅ **Cost optimization**: Scale down to minimum workers during off-peak hours automatically
-- ✅ **Self-healing**: Detect queue depth thresholds and respond to traffic patterns without manual intervention
-- ✅ **Cooldown protection**: Prevent thrashing with 20-30s cooldown periods between scaling actions
-
-**Operational Metrics:**
-
-| Metric | Before Queues | After Queues | Improvement |
-|--------|---------------|--------------|-------------|
-| **Response time** | 8-15 seconds | <500ms | **96% faster** |
-| **Peak traffic handling** | 10 req/s max | 500 req/s | **50x capacity** |
-| **Database connections** | 100+ (exhausted) | 10-20 steady | **80% reduction** |
-| **Failed requests (spike)** | 60% error rate | <1% error rate | **59% fewer errors** |
-| **Throughput** | 10 jobs/min | 150+ jobs/min | **15x throughput** |
-
----
-
-### 4. Circuit Breaker Pattern
+### 2. Circuit Breaker Pattern
 
 ```mermaid
 stateDiagram-v2
@@ -1292,7 +401,7 @@ async createPaymentIntent(applicationId: string) {
 
 ---
 
-### 5. Bulkhead Isolation Pattern
+### 3. Bulkhead Isolation Pattern
 
 ```mermaid
 graph TB
@@ -1457,7 +566,7 @@ export class BulkheadService {
 
 ---
 
-### 6. Retry with Exponential Backoff + DLQ
+### 4. Retry with Exponential Backoff + DLQ
 
 ```mermaid
 sequenceDiagram
@@ -1548,21 +657,911 @@ export class DlqService {
 }
 ```
 
-**Retry Strategy:**
-
-| Attempt | Delay | Total Elapsed |
-|---------|-------|---------------|
-| 1 | 0s | 0s |
-| 2 | 2s | 2s |
-| 3 | 4s | 6s |
-| 4 | 8s | 14s |
-| Failed | → DLQ | - |
 
 **Benefits:**
 - ✅ Handles transient errors automatically
 - ✅ Exponential backoff prevents thundering herd
 - ✅ DLQ ensures no jobs are lost
 - ✅ Alerting for manual intervention
+
+---
+
+### 5. Outbox Pattern
+
+```mermaid
+sequenceDiagram
+    participant Service as ApplicationsService
+    participant DB as PostgreSQL
+    participant OutboxTable as Outbox Table
+    participant Scheduler as OutboxRelayScheduler (Cron)
+    participant Queue as Redis Queue
+    
+    Note over Service,Queue: Transactional Messaging with Outbox Pattern
+    
+    Service->>DB: BEGIN TRANSACTION
+    Service->>DB: INSERT INTO application
+    Service->>DB: INSERT INTO application_file
+    
+    rect rgb(200, 255, 200)
+    Note right of Service: ✅ Same transaction!
+    Service->>OutboxTable: INSERT INTO outbox<br/>(eventType: 'document_uploaded')
+    Service->>OutboxTable: INSERT INTO outbox<br/>(eventType: 'application_submitted')
+    end
+    
+    Service->>DB: COMMIT TRANSACTION
+    Note over Service,DB: ✅ Atomic: both data + events committed together
+    
+    Service-->>Service: Return to client (fast!)
+    
+    Note over Scheduler,Queue: Background Relay Process
+    
+    loop Every 2 seconds
+        Scheduler->>OutboxTable: SELECT * FROM outbox<br/>WHERE processedAt IS NULL<br/>LIMIT 100
+        OutboxTable-->>Scheduler: Unprocessed events
+        
+        loop For each event
+            alt Event: document_uploaded
+                Scheduler->>Queue: Enqueue verify_document job
+            else Event: document_verified
+                Scheduler->>Queue: Enqueue create_payment job
+            else Event: payment_completed
+                Scheduler->>Queue: Enqueue send_email job
+            else Event: email_sent
+                Scheduler->>DB: UPDATE application<br/>(status: 'completed')
+            end
+            
+            Scheduler->>OutboxTable: UPDATE outbox<br/>SET processedAt = NOW()<br/>WHERE id = ?
+        end
+    end
+```
+
+**Implementation:**
+
+```typescript
+// Step 1: Create application with outbox events in same transaction
+async createApplication(userId: string, dto: CreateApplicationDto) {
+  const application = await this.prisma.$transaction(async (tx) => {
+    // Create application
+    const newApp = await tx.application.create({
+      data: { userId, personalStatement: dto.personalStatement, status: 'submitted' },
+    });
+
+    // Create files
+    for (const file of validatedFiles) {
+      await tx.applicationFile.create({
+        data: { applicationId: newApp.id, ...file },
+      });
+    }
+
+    // ✅ Create outbox events in SAME transaction
+    await tx.outbox.create({
+      data: {
+        eventType: 'document_uploaded',
+        payload: JSON.stringify({ applicationId: newApp.id, files: [...] }),
+      },
+    });
+
+    await tx.outbox.create({
+      data: {
+        eventType: 'application_submitted',
+        payload: JSON.stringify({ applicationId: newApp.id }),
+      },
+    });
+
+    return newApp;
+  });
+
+  return { applicationId: application.id, statusUrl: `/applications/${application.id}/status` };
+}
+
+// Step 2: Background relay service
+@Injectable()
+export class OutboxRelayService {
+  async processOutbox() {
+    const messages = await this.prisma.outbox.findMany({
+      where: { processedAt: null },
+      orderBy: { createdAt: 'asc' },
+      take: 100,
+    });
+
+    for (const message of messages) {
+      try {
+        await this.processMessage(message);
+        
+        // Mark as processed
+        await this.prisma.outbox.update({
+          where: { id: message.id },
+          data: { processedAt: new Date() },
+        });
+      } catch (error) {
+        this.logger.error(`Failed to process outbox message ${message.id}`, error);
+      }
+    }
+  }
+
+  private async processMessage(message: any) {
+    const payload = JSON.parse(message.payload);
+    
+    switch (message.eventType) {
+      case 'document_uploaded':
+        await this.queueProducer.addVerifyDocumentJob(`verify_${message.id}`, payload);
+        break;
+      case 'document_verified':
+        await this.queueProducer.addCreatePaymentJob(`payment_${message.id}`, payload);
+        break;
+      case 'payment_completed':
+        await this.queueProducer.addSendEmailJob(`email_${message.id}`, payload);
+        break;
+      case 'email_sent':
+        await this.prisma.application.update({
+          where: { id: payload.applicationId },
+          data: { status: 'completed', progress: 100 },
+        });
+        break;
+    }
+  }
+}
+
+// Step 3: Cron scheduler
+@Injectable()
+export class OutboxRelayScheduler {
+  @Cron('*/2 * * * * *') // Every 2 seconds
+  async handleCron() {
+    await this.outboxRelayService.processOutbox();
+  }
+}
+```
+
+**Benefits:**
+- ✅ Guaranteed message delivery (transactional)
+- ✅ At-least-once delivery semantics
+- ✅ Data consistency between DB and events
+- ✅ No message loss even if queue is down
+
+---
+
+### 6. Queue-Based Load Leveling + Competing Consumers
+
+Hệ thống sử dụng **BullMQ (Redis-based queue)** để smooths out traffic spikes và xử lý công việc nền một cách hiệu quả. Competing Consumers pattern cho phép nhiều workers cùng xử lý jobs từ cùng một queue, tăng throughput và khả năng chịu tải.
+
+#### 6.1. Queue Architecture
+
+```mermaid
+graph TB
+    subgraph "Client Layer - Spiky Traffic"
+        C1[👤 Request 1]
+        C2[👤 Request 2]
+        C3[👤 Request 3]
+        C100[👤 Request 100...]
+    end
+    
+    subgraph "API Layer - Fast Response <500ms"
+        API[ApplicationsService]
+        Producer[QueueProducerService]
+    end
+    
+    subgraph "Queue Layer - BullMQ/Redis Buffer"
+        Q1["📋 verify_document<br/>Priority: High (1)<br/>Retry: 3x, Exp backoff 2s"]
+        Q2["💳 create_payment<br/>Priority: Highest (0)<br/>Retry: 3x, Exp backoff 2s"]
+        Q3["📧 send_email<br/>Priority: Low (2)<br/>Retry: 2x, Exp backoff 1s"]
+    end
+    
+    subgraph "Worker Pool - Competing Consumers"
+        subgraph "Doc Verification Pool (Concurrency: 3)"
+            DW1[Worker 1]
+            DW2[Worker 2]
+            DW3[Worker 3]
+        end
+        
+        subgraph "Payment Pool (Concurrency: 5)"
+            PW1[Worker 1]
+            PW2[Worker 2]
+            PW3[Worker 3]
+            PW4[Worker 4]
+            PW5[Worker 5]
+        end
+        
+        subgraph "Email Pool (Concurrency: 10)"
+            EW1[Worker 1-10...]
+        end
+    end
+    
+    subgraph "Storage"
+        DB[(PostgreSQL)]
+        FS[File System]
+    end
+    
+    C1 & C2 & C3 & C100 -->|POST| API
+    API -->|Enqueue jobs| Producer
+    
+    Producer -->|addVerifyDocumentJob| Q1
+    Producer -->|addCreatePaymentJob| Q2
+    Producer -->|addSendEmailJob| Q3
+    
+    API -->|202 Accepted| C1
+    
+    Q1 -.->|Poll & Process| DW1 & DW2 & DW3
+    Q2 -.->|Poll & Process| PW1 & PW2 & PW3 & PW4 & PW5
+    Q3 -.->|Poll & Process| EW1
+    
+    DW1 & DW2 & DW3 --> DB
+    DW1 & DW2 & DW3 --> FS
+    PW1 & PW2 & PW3 & PW4 & PW5 --> DB
+    EW1 --> DB
+    
+    style API fill:#90EE90
+    style Producer fill:#98FB98
+    style Q1 fill:#FFD700
+    style Q2 fill:#FFB347
+    style Q3 fill:#FFDAB9
+    style DW1 fill:#87CEEB
+    style DW2 fill:#87CEEB
+    style DW3 fill:#87CEEB
+    style PW1 fill:#DDA0DD
+    style PW2 fill:#DDA0DD
+    style PW3 fill:#DDA0DD
+    style PW4 fill:#DDA0DD
+    style PW5 fill:#DDA0DD
+    style EW1 fill:#F0E68C
+```
+
+#### 6.2. Producer - QueueProducerService
+
+Service này chịu trách nhiệm enqueue jobs vào các Redis queues với configuration phù hợp.
+
+```typescript
+// backend/src/feature-flags/queue/queue-producer.service.ts
+
+@Injectable()
+export class QueueProducerService {
+  constructor(
+    @InjectQueue('verify_document') private verifyDocumentQueue: Queue,
+    @InjectQueue('create_payment') private createPaymentQueue: Queue,
+    @InjectQueue('send_email') private sendEmailQueue: Queue,
+    private bulkheadService: BulkheadService,
+    private featureFlagsService: FeatureFlagsService,
+  ) {}
+
+  async addVerifyDocumentJob(
+    jobId: string,
+    data: any,
+    priority: JobPriority = 'normal'
+  ): Promise<void> {
+    // Check if bulkhead isolation is enabled
+    const flag = await this.featureFlagsService.getFlag('bulkhead-isolation');
+    
+    if (flag?.enabled) {
+      // Execute with bulkhead isolation
+      await this.bulkheadService.executeInBulkhead('verify_document', async () => {
+        await this.verifyDocumentQueue.add('verify_document', data, {
+          jobId,
+          priority: this.mapPriority(priority), // 0=critical, 1=high, 2=normal, 3=low
+          attempts: 3,
+          backoff: {
+            type: 'exponential',
+            delay: 2000, // 2s, 4s, 8s
+          },
+        });
+      });
+    } else {
+      // Direct enqueue without bulkhead
+      await this.verifyDocumentQueue.add('verify_document', data, {
+        jobId,
+        priority: this.mapPriority(priority),
+      });
+    }
+  }
+
+  async addCreatePaymentJob(
+    jobId: string,
+    data: any,
+    priority: JobPriority = 'normal'
+  ): Promise<void> {
+    const flag = await this.featureFlagsService.getFlag('bulkhead-isolation');
+    
+    if (flag?.enabled) {
+      await this.bulkheadService.executeInBulkhead('create_payment', async () => {
+        await this.createPaymentQueue.add('create_payment', data, {
+          jobId,
+          priority: this.mapPriority(priority),
+          attempts: 3,
+          backoff: {
+            type: 'exponential',
+            delay: 2000,
+          },
+        });
+      });
+    } else {
+      await this.createPaymentQueue.add('create_payment', data, {
+        jobId,
+        priority: this.mapPriority(priority),
+      });
+    }
+  }
+
+  async addSendEmailJob(
+    jobId: string,
+    data: any,
+    priority: JobPriority = 'normal'
+  ): Promise<void> {
+    const flag = await this.featureFlagsService.getFlag('bulkhead-isolation');
+    
+    if (flag?.enabled) {
+      await this.bulkheadService.executeInBulkhead('send_email', async () => {
+        await this.sendEmailQueue.add('send_email', data, {
+          jobId,
+          priority: this.mapPriority(priority),
+          attempts: 2, // Email has fewer retries
+          backoff: {
+            type: 'exponential',
+            delay: 1000,
+          },
+        });
+      });
+    } else {
+      await this.sendEmailQueue.add('send_email', data, {
+        jobId,
+        priority: this.mapPriority(priority),
+      });
+    }
+  }
+
+  private mapPriority(priority: JobPriority): number {
+    switch (priority) {
+      case 'low': return 3;
+      case 'normal': return 2;
+      case 'high': return 1;
+      case 'critical': return 0;
+      default: return 2;
+    }
+  }
+}
+```
+
+**Job Priority Levels:**
+
+| Priority | Numeric Value | Use Case |
+|----------|---------------|----------|
+| **critical** | 0 | Emergency processing, SLA violations |
+| **high** | 1 | Payment processing, time-sensitive tasks |
+| **normal** | 2 | Document verification, standard workflows |
+| **low** | 3 | Bulk operations, non-urgent tasks |
+
+#### 6.3. Consumer - Worker Implementation
+
+##### 6.3.1. Base Worker Class
+
+```typescript
+// backend/src/feature-flags/workers/worker-base.ts
+
+export abstract class WorkerBase {
+  protected readonly logger = new Logger(this.constructor.name);
+
+  constructor(protected prisma: PrismaService) {}
+
+  abstract processJob(jobData: JobData): Promise<any>;
+
+  async processJobWithRetry(jobData: JobData, job: Job): Promise<any> {
+    const attemptNumber = job.attemptsMade + 1;
+    
+    try {
+      const result = await this.processJob(jobData);
+      this.logger.log(`Job ${job.id} completed successfully on attempt ${attemptNumber}`);
+      return result;
+    } catch (error) {
+      this.logger.error(
+        `Job ${job.id} failed on attempt ${attemptNumber} of ${job.opts.attempts || 1}: ${error.message}`,
+        error.stack
+      );
+      
+      // Re-throw to trigger BullMQ's retry mechanism
+      throw error;
+    }
+  }
+
+  async updateApplicationStatus(applicationId: string, status: string) {
+    let progress = 0;
+    
+    switch (status) {
+      case 'submitted': progress = 25; break;
+      case 'verifying': progress = 30; break;
+      case 'verified': progress = 50; break;
+      case 'verification_failed': progress = 25; break;
+      case 'processing_payment': progress = 55; break;
+      case 'payment_initiated': progress = 75; break;
+      case 'payment_failed': progress = 50; break;
+      case 'completed': progress = 100; break;
+    }
+
+    return this.prisma.application.update({
+      where: { id: applicationId },
+      data: { status, progress },
+    });
+  }
+}
+```
+
+##### 6.3.2. Document Verification Worker
+
+```typescript
+// backend/src/feature-flags/workers/document-verification.worker.ts
+
+@Processor('verify_document')
+export class DocumentVerificationWorker extends WorkerBase {
+  constructor(
+    prisma: PrismaService,
+    private documentVerificationService: DocumentVerificationService,
+  ) {
+    super(prisma);
+  }
+
+  async processJob(jobData: VerifyDocumentJobData): Promise<any> {
+    const { applicationId, applicationFileIds } = jobData;
+
+    // Update status to 'verifying'
+    await this.updateApplicationStatus(applicationId, 'verifying');
+
+    try {
+      // Verify each document
+      for (const filePath of applicationFileIds) {
+        const applicationFiles = await this.prisma.applicationFile.findMany({
+          where: { applicationId, filePath },
+        });
+
+        for (const file of applicationFiles) {
+          await this.documentVerificationService.verifyDocument(file.id);
+        }
+      }
+
+      // Update status to 'verified'
+      await this.updateApplicationStatus(applicationId, 'verified');
+
+      // Emit event to trigger next workflow step (payment)
+      await this.prisma.outbox.create({
+        data: {
+          eventType: 'document_verified',
+          payload: JSON.stringify({ applicationId }),
+        },
+      });
+      this.logger.log(`Emitted document_verified event for app: ${applicationId}`);
+
+      return { success: true, applicationId };
+    } catch (error) {
+      await this.updateApplicationStatus(applicationId, 'verification_failed');
+      this.logger.error(`Document verification failed for ${applicationId}: ${error.message}`);
+      throw error;
+    }
+  }
+
+  @Process('verify_document')
+  async processVerifyDocument(job: Job<VerifyDocumentJobData>): Promise<any> {
+    return await this.processJobWithRetry(job.data, job);
+  }
+}
+```
+
+##### 6.3.3. Payment Processing Worker
+
+```typescript
+// backend/src/feature-flags/workers/payment-processing.worker.ts
+
+@Processor('create_payment')
+export class PaymentProcessingWorker extends WorkerBase {
+  constructor(
+    prisma: PrismaService,
+    private paymentService: PaymentService,
+  ) {
+    super(prisma);
+  }
+
+  async processJob(jobData: CreatePaymentJobData): Promise<any> {
+    const { applicationId } = jobData;
+
+    await this.updateApplicationStatus(applicationId, 'processing_payment');
+
+    try {
+      // Create payment intent
+      await this.paymentService.createPaymentIntent({
+        applicationId,
+        amount: 7500, // $75.00 application fee
+        currency: 'usd',
+      });
+
+      await this.updateApplicationStatus(applicationId, 'payment_initiated');
+
+      // Emit event to trigger next workflow step (email)
+      await this.prisma.outbox.create({
+        data: {
+          eventType: 'payment_completed',
+          payload: JSON.stringify({ applicationId }),
+        },
+      });
+      this.logger.log(`Emitted payment_completed event for app: ${applicationId}`);
+
+      return { success: true, applicationId };
+    } catch (error) {
+      await this.updateApplicationStatus(applicationId, 'payment_failed');
+      this.logger.error(`Payment processing failed for ${applicationId}: ${error.message}`);
+      throw error;
+    }
+  }
+
+  @Process('create_payment')
+  async processCreatePayment(job: Job<CreatePaymentJobData>): Promise<any> {
+    return this.processJobWithRetry(job.data, job);
+  }
+}
+```
+
+##### 6.3.4. Email Sending Worker
+
+```typescript
+// backend/src/feature-flags/workers/email-sending.worker.ts
+
+@Processor('send_email')
+export class EmailSendingWorker extends WorkerBase {
+  constructor(
+    prisma: PrismaService,
+    private emailService: EmailService,
+  ) {
+    super(prisma);
+  }
+
+  async processJob(jobData: SendEmailJobData): Promise<any> {
+    const { applicationId, email, template = 'status-update' } = jobData;
+
+    try {
+      // Send email based on template
+      if (template === 'status-update') {
+        const application = await this.prisma.application.findUnique({
+          where: { id: applicationId },
+          include: { user: true }
+        });
+
+        if (application?.user.email) {
+          await this.emailService.sendApplicationStatusUpdate(
+            application.user.email,
+            applicationId,
+            application.status as any
+          );
+        }
+      } else if (template === 'confirmation') {
+        await this.emailService.sendApplicationConfirmation(email, applicationId);
+      }
+
+      await this.updateApplicationStatus(applicationId, 'email_sent');
+
+      // Emit event to mark workflow as complete
+      await this.prisma.outbox.create({
+        data: {
+          eventType: 'email_sent',
+          payload: JSON.stringify({ applicationId }),
+        },
+      });
+      this.logger.log(`Emitted email_sent event for app: ${applicationId}`);
+
+      return { success: true, applicationId, email };
+    } catch (error) {
+      await this.updateApplicationStatus(applicationId, 'email_failed');
+      this.logger.error(`Email sending failed for ${applicationId}: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  @Process('send_email')
+  async processSendEmail(job: Job<SendEmailJobData>): Promise<any> {
+    return this.processJobWithRetry(job.data, job);
+  }
+}
+```
+
+#### 6.4. Competing Consumers Pattern
+
+```mermaid
+sequenceDiagram
+    participant Q as Redis Queue (verify_document)
+    participant W1 as Worker 1
+    participant W2 as Worker 2
+    participant W3 as Worker 3
+    participant DB as PostgreSQL
+    
+    Note over Q: 100 jobs waiting in queue
+    
+    par Worker 1 processing
+        Q->>W1: Poll job #1
+        W1->>W1: Process job #1
+        W1->>DB: Update status
+        W1->>Q: ACK job #1
+        Q->>W1: Poll job #4
+        W1->>W1: Process job #4
+        W1->>DB: Update status
+        W1->>Q: ACK job #4
+    and Worker 2 processing
+        Q->>W2: Poll job #2
+        W2->>W2: Process job #2
+        W2->>DB: Update status
+        W2->>Q: ACK job #2
+        Q->>W2: Poll job #5
+        W2->>W2: Process job #5
+        W2->>DB: Update status
+        W2->>Q: ACK job #5
+    and Worker 3 processing
+        Q->>W3: Poll job #3
+        W3->>W3: Process job #3
+        W3->>DB: Update status
+        W3->>Q: ACK job #3
+        Q->>W3: Poll job #6
+        W3->>W3: Process job #6
+        W3->>DB: Update status
+        W3->>Q: ACK job #6
+    end
+    
+    Note over Q,DB: ✅ 3 workers process 6 jobs in parallel<br/>Throughput: 3x faster than single worker
+```
+
+#### 6.5. Worker Pool Management
+
+```typescript
+// backend/src/feature-flags/workers/worker-pool.service.ts
+
+@Injectable()
+export class WorkerPoolService implements OnModuleInit {
+  private readonly logger = new Logger(WorkerPoolService.name);
+  private pools: Map<string, WorkerPoolDefinition> = new Map();
+  private poolStats: Map<string, WorkerPoolStats> = new Map();
+  private readonly HEALTH_CHECK_INTERVAL = 30000; // 30 seconds
+
+  constructor(
+    @InjectQueue('verify_document') private verifyDocumentQueue: Queue,
+    @InjectQueue('create_payment') private createPaymentQueue: Queue,
+    @InjectQueue('send_email') private sendEmailQueue: Queue,
+    private featureFlagsService: FeatureFlagsService,
+  ) {}
+
+  async onModuleInit() {
+    const flag = await this.featureFlagsService.getFlag('competing-consumers');
+    
+    if (flag?.enabled) {
+      this.initializePools();
+      this.startHealthMonitoring();
+    }
+  }
+
+  private initializePools() {
+    // Document Verification Pool
+    this.registerPool({
+      poolId: 'pool_verify_document',
+      poolName: 'Document Verification',
+      queueName: 'verify_document',
+      description: 'Processes document verification tasks',
+      concurrency: 3,
+      priority: 1, // High priority
+      enabled: true,
+    });
+
+    // Payment Processing Pool
+    this.registerPool({
+      poolId: 'pool_create_payment',
+      poolName: 'Payment Processing',
+      queueName: 'create_payment',
+      description: 'Handles payment creation and processing',
+      concurrency: 5,
+      priority: 0, // Highest priority
+      enabled: true,
+    });
+
+    // Email Sending Pool
+    this.registerPool({
+      poolId: 'pool_send_email',
+      poolName: 'Email Notifications',
+      queueName: 'send_email',
+      description: 'Sends email notifications',
+      concurrency: 10,
+      priority: 2, // Lower priority
+      enabled: true,
+    });
+  }
+
+  async getPoolStats(poolId: string): Promise<WorkerPoolStats> {
+    const definition = this.pools.get(poolId);
+    const queue = this.getQueue(definition.queueName);
+
+    const [waiting, active, completed, failed, delayed] = await Promise.all([
+      queue.getWaitingCount(),
+      queue.getActiveCount(),
+      queue.getCompletedCount(),
+      queue.getFailedCount(),
+      queue.getDelayedCount(),
+    ]);
+
+    // Calculate throughput (jobs completed in last minute)
+    const recentJobs = await queue.getCompleted(0, 99);
+    const oneMinuteAgo = Date.now() - 60000;
+    const throughput = recentJobs.filter(
+      job => job.finishedOn && job.finishedOn > oneMinuteAgo
+    ).length;
+
+    return {
+      poolId,
+      poolName: definition.poolName,
+      queueName: definition.queueName,
+      enabled: definition.enabled,
+      concurrency: definition.concurrency,
+      waiting,
+      active,
+      completed,
+      failed,
+      delayed,
+      paused: await queue.isPaused(),
+      throughput,
+      avgProcessingTime: 0, // Calculated from job metrics
+      errorRate: 0,
+      lastJobCompletedAt: null,
+      lastJobFailedAt: null,
+    };
+  }
+}
+```
+
+**Worker Pool Configuration:**
+
+| Pool Name | Queue | Concurrency | Priority | Use Case |
+|-----------|-------|-------------|----------|----------|
+| **Payment Processing** | `create_payment` | 5 | 0 (Highest) | Critical payment workflows |
+| **Document Verification** | `verify_document` | 3 | 1 (High) | Security-sensitive document scanning |
+| **Email Notifications** | `send_email` | 10 | 2 (Normal) | Non-critical notifications |
+
+#### 6.6. Dynamic Worker Scaling
+
+```typescript
+// backend/src/feature-flags/workers/worker-scaling.service.ts
+
+@Injectable()
+export class WorkerScalingService implements OnModuleInit {
+  private readonly logger = new Logger(WorkerScalingService.name);
+  private scalingConfigs: Map<string, WorkerScalingConfig> = new Map();
+  private currentWorkerCounts: Map<string, number> = new Map();
+
+  private initializeConfigs() {
+    // Document Verification: Scale 2-10 workers
+    this.scalingConfigs.set('verify_document', {
+      queueName: 'verify_document',
+      minWorkers: 2,
+      maxWorkers: 10,
+      scaleUpThreshold: 50,   // Scale up when >50 jobs waiting
+      scaleDownThreshold: 10, // Scale down when <10 jobs waiting
+      checkInterval: 10000,   // Check every 10 seconds
+      cooldownPeriod: 30000,  // Wait 30s between scaling actions
+    });
+
+    // Payment Processing: Scale 3-15 workers
+    this.scalingConfigs.set('create_payment', {
+      queueName: 'create_payment',
+      minWorkers: 3,
+      maxWorkers: 15,
+      scaleUpThreshold: 30,
+      scaleDownThreshold: 5,
+      checkInterval: 10000,
+      cooldownPeriod: 20000, // Faster scaling for critical payments
+    });
+
+    // Email Sending: Scale 2-8 workers
+    this.scalingConfigs.set('send_email', {
+      queueName: 'send_email',
+      minWorkers: 2,
+      maxWorkers: 8,
+      scaleUpThreshold: 100, // Emails can queue more
+      scaleDownThreshold: 20,
+      checkInterval: 15000,
+      cooldownPeriod: 30000,
+    });
+  }
+
+  private async evaluateScaling() {
+    for (const [queueName, config] of this.scalingConfigs.entries()) {
+      const queue = this.getQueue(queueName);
+      const waitingCount = await queue.getWaitingCount();
+      const currentWorkers = this.currentWorkerCounts.get(queueName) || config.minWorkers;
+
+      // Check cooldown period
+      const lastScaling = this.lastScalingTimes.get(queueName) || 0;
+      if (Date.now() - lastScaling < config.cooldownPeriod) {
+        continue; // Still in cooldown
+      }
+
+      // Scale up logic
+      if (waitingCount >= config.scaleUpThreshold && currentWorkers < config.maxWorkers) {
+        const newWorkerCount = Math.min(currentWorkers + 1, config.maxWorkers);
+        this.scaleWorkers(queueName, newWorkerCount);
+        this.logger.log(
+          `Scaled UP '${queueName}': ${currentWorkers} → ${newWorkerCount} workers ` +
+          `(waiting: ${waitingCount}, threshold: ${config.scaleUpThreshold})`
+        );
+      }
+      // Scale down logic (only if no active jobs)
+      else if (waitingCount <= config.scaleDownThreshold && currentWorkers > config.minWorkers) {
+        const activeCount = await queue.getActiveCount();
+        if (activeCount === 0) {
+          const newWorkerCount = Math.max(currentWorkers - 1, config.minWorkers);
+          this.scaleWorkers(queueName, newWorkerCount);
+          this.logger.log(
+            `Scaled DOWN '${queueName}': ${currentWorkers} → ${newWorkerCount} workers ` +
+            `(waiting: ${waitingCount}, threshold: ${config.scaleDownThreshold})`
+          );
+        }
+      }
+    }
+  }
+}
+```
+
+**Auto-Scaling Diagram:**
+
+```mermaid
+graph LR
+    subgraph "Traffic Pattern"
+        T1[Normal Load<br/>20 jobs/min]
+        T2[Spike!<br/>200 jobs/min]
+        T3[Peak<br/>500 jobs/min]
+        T4[Normal<br/>20 jobs/min]
+    end
+    
+    subgraph "Worker Scaling"
+        W1[2 workers<br/>Min capacity]
+        W2[5 workers<br/>Scaled up]
+        W3[10 workers<br/>Max capacity]
+        W4[2 workers<br/>Scaled down]
+    end
+    
+    subgraph "Queue Depth"
+        Q1[5 jobs waiting]
+        Q2[60 jobs waiting<br/>⚠️ Threshold: 50]
+        Q3[150 jobs waiting<br/>⚠️ Threshold: 50]
+        Q4[8 jobs waiting]
+    end
+    
+    T1 --> Q1 --> W1
+    T2 --> Q2 --> W2
+    T3 --> Q3 --> W3
+    T4 --> Q4 --> W4
+    
+    style T2 fill:#FFB347
+    style T3 fill:#FF6347
+    style Q2 fill:#FFD700
+    style Q3 fill:#FFA500
+    style W2 fill:#90EE90
+    style W3 fill:#32CD32
+```
+
+#### 6.7. Benefits
+
+**Queue-Based Load Leveling:**
+- ✅ **Smooths traffic spikes**: 500 req/s spike → steady 50 req/s processing
+- ✅ **Prevents database overload**: Queue acts as buffer, protects DB from connection pool exhaustion
+- ✅ **Graceful degradation**: System remains responsive even under extreme load
+- ✅ **Job prioritization**: Critical payments processed before non-urgent emails
+
+**Competing Consumers:**
+- ✅ **Parallel processing**: 3-10 workers process jobs concurrently
+- ✅ **Horizontal scalability**: Add more worker instances without code changes
+- ✅ **Fault isolation**: Worker crash doesn't affect others, job automatically retried
+- ✅ **Load distribution**: BullMQ distributes jobs evenly across available workers
+
+**Auto-Scaling:**
+- ✅ **Dynamic capacity**: Automatically scale 2→10 workers based on queue depth
+- ✅ **Cost optimization**: Scale down to minimum during off-peak hours
+- ✅ **Self-healing**: Detect and respond to traffic patterns without manual intervention
+- ✅ **Cooldown protection**: Prevent thrashing with 20-30s cooldown periods
+
+**Operational Metrics:**
+
+| Metric | Before Queues | After Queues | Improvement |
+|--------|---------------|--------------|-------------|
+| **Response time** | 8-15 seconds | <500ms | **96% faster** |
+| **Peak traffic handling** | 10 req/s max | 500 req/s | **50x capacity** |
+| **Database connections** | 100+ (exhausted) | 10-20 steady | **80% reduction** |
+| **Failed requests (spike)** | 60% error rate | <1% error rate | **59% fewer errors** |
+| **Throughput** | 10 jobs/min | 150+ jobs/min | **15x throughput** |
 
 ---
 
