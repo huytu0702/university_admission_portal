@@ -220,16 +220,6 @@ await tx.outbox.create({
     }),
   },
 });
-
-// Tạo outbox message cho payment processing
-await tx.outbox.create({
-  data: {
-    eventType: 'application_submitted',
-    payload: JSON.stringify({
-      applicationId: newApplication.id,
-    }),
-  },
-});
 ```
 
 ### Lợi ích của Outbox Pattern
@@ -441,7 +431,6 @@ graph TB
     A[User Actions] --> B[Outbox Events]
 
     subgraph "Application Events"
-        E1[application_submitted]
         E2[document_uploaded]
         E3[document_verified]
         E4[application_approved]
@@ -462,7 +451,6 @@ graph TB
         N4[application_decision]
     end
 
-    B --> E1
     B --> E2
     B --> E3
     B --> E4

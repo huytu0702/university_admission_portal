@@ -53,7 +53,6 @@ sequenceDiagram
     rect rgb(200, 255, 200)
     Note right of Service: ✅ Pattern: Outbox
     Service->>Outbox: INSERT outbox event<br/>(document_uploaded)
-    Service->>Outbox: INSERT outbox event<br/>(application_submitted)
     end
     
     Service->>DB: COMMIT TRANSACTION
@@ -281,7 +280,6 @@ sequenceDiagram
     rect rgb(200, 255, 200)
     Note right of Service: ✅ Same transaction!
     Service->>OutboxTable: INSERT INTO outbox<br/>(eventType: 'document_uploaded')
-    Service->>OutboxTable: INSERT INTO outbox<br/>(eventType: 'application_submitted')
     end
     
     Service->>DB: COMMIT TRANSACTION
@@ -334,13 +332,6 @@ async createApplication(userId: string, dto: CreateApplicationDto) {
       data: {
         eventType: 'document_uploaded',
         payload: JSON.stringify({ applicationId: newApp.id, files: [...] }),
-      },
-    });
-
-    await tx.outbox.create({
-      data: {
-        eventType: 'application_submitted',
-        payload: JSON.stringify({ applicationId: newApp.id }),
       },
     });
 

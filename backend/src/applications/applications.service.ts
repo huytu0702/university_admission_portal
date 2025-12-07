@@ -106,16 +106,6 @@ export class ApplicationsService {
                 },
               });
             }
-
-            // Create outbox message for payment processing
-            await tx.outbox.create({
-              data: {
-                eventType: 'application_submitted',
-                payload: JSON.stringify({
-                  applicationId: newApplication.id,
-                }),
-              },
-            });
           }
 
           return newApplication;

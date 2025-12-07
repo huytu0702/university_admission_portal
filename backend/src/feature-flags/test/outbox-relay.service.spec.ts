@@ -52,13 +52,6 @@ describe('OutboxRelayService', () => {
         createdAt: new Date(),
         processedAt: null,
       },
-      {
-        id: 'outbox-2',
-        eventType: 'application_submitted',
-        payload: JSON.stringify({ applicationId: 'app-456' }),
-        createdAt: new Date(),
-        processedAt: null,
-      },
     ];
 
     jest.spyOn(prismaService.outbox, 'findMany').mockResolvedValue(mockOutboxMessages as any);
@@ -72,6 +65,5 @@ describe('OutboxRelayService', () => {
       take: 100,
     });
     expect(queueProducerService.addVerifyDocumentJob).toHaveBeenCalled();
-    expect(queueProducerService.addCreatePaymentJob).toHaveBeenCalled();
   });
 });
