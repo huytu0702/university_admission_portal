@@ -1,14 +1,14 @@
-﻿# Luá»“ng Hoáº¡t Äá»™ng Há»‡ Thá»‘ng Sau Khi Ãp Dá»¥ng Design Patterns
+﻿# Luồng Hoạt Động Hệ Thống Sau Khi Áp Dụng Design Patterns
 
-## Tá»•ng Quan
+## Tổng Quan
 
-TÃ i liá»‡u nÃ y mÃ´ táº£ chi tiáº¿t luá»“ng hoáº¡t Ä‘á»™ng cá»§a há»‡ thá»‘ng University Admission Portal **sau khi** Ã¡p dá»¥ng cÃ¡c design patterns: Queue-Based Load Leveling, Outbox Pattern, Circuit Breaker, Bulkhead Isolation, Idempotency, CQRS-lite, vÃ  Competing Consumers.
+Tài liệu này mô tả chi tiết luồng hoạt động của hệ thống University Admission Portal **sau khi** áp dụng các design patterns: Queue-Based Load Leveling, Outbox Pattern, Circuit Breaker, Bulkhead Isolation, Idempotency, CQRS-lite, và Competing Consumers.
 
-## Kiáº¿n TrÃºc Hiá»‡n Äáº¡i Vá»›i Patterns
+## Kiến Trúc Hiện Đại Với Patterns
 
-Há»‡ thá»‘ng hiá»‡n táº¡i hoáº¡t Ä‘á»™ng theo mÃ´ hÃ¬nh **asynchronous processing**, **event-driven architecture**, vá»›i cÃ¡c cÆ¡ cháº¿ báº£o vá»‡ vÃ  tá»‘i Æ°u hÃ³a tiÃªn tiáº¿n.
+Hệ thống hiện tại hoạt động theo mô hình **asynchronous processing**, **event-driven architecture**, với các cơ chế bảo vệ và tối ưu hóa tiên tiến.
 
-## Mermaid Diagram - Luá»“ng Xá»­ LÃ½ Vá»›i Patterns
+## Mermaid Diagram - Luồng Xử Lý Với Patterns
 
 ```mermaid
 sequenceDiagram
@@ -24,13 +24,13 @@ sequenceDiagram
     participant CircuitBreaker as Circuit Breaker
     participant ReadModel as CQRS Read Model
     
-    Note over Client,ReadModel: Luá»“ng Async Processing vá»›i Design Patterns
+    Note over Client,ReadModel: Luồng Async Processing với Design Patterns
     
     Client->>Controller: POST /applications<br/>Header: Idempotency-Key
     Controller->>Service: createApplication(userId, dto, key)
     
     rect rgb(200, 255, 200)
-    Note right of Service: âœ… Pattern: Idempotency
+    Note right of Service: ✅ Pattern: Idempotency
     Service->>Idempotency: Check idempotency key
     alt Key exists (duplicate request)
         Idempotency-->>Service: Return cached result
@@ -41,7 +41,7 @@ sequenceDiagram
     end
     end
     
-    Note over Service,DB: Transaction vá»›i Outbox Pattern
+    Note over Service,DB: Transaction với Outbox Pattern
     Service->>DB: BEGIN TRANSACTION
     Service->>DB: INSERT application<br/>(status: 'submitted')
     
@@ -51,7 +51,7 @@ sequenceDiagram
     end
     
     rect rgb(200, 255, 200)
-    Note right of Service: âœ… Pattern: Outbox
+    Note right of Service: ✅ Pattern: Outbox
     Service->>Outbox: INSERT outbox event<br/>(document_uploaded)
     Service->>Outbox: INSERT outbox event<br/>(application_submitted)
     end
@@ -59,14 +59,14 @@ sequenceDiagram
     Service->>DB: COMMIT TRANSACTION
     
     rect rgb(200, 255, 200)
-    Note right of Service: âœ… Pattern: CQRS-lite
+    Note right of Service: ✅ Pattern: CQRS-lite
     Service->>ReadModel: Warm read model cache (async)
     end
     
     Service-->>Controller: {applicationId, statusUrl, payUrl}
     Controller-->>Client: 202 Accepted (< 500ms)
     
-    Note over Client,ReadModel: âš¡ Client receives response immediately!
+    Note over Client,ReadModel: ⚡ Client receives response immediately!
     
     rect rgb(255, 240, 200)
     Note over Scheduler,Queue: Async Processing Pipeline
@@ -83,14 +83,14 @@ sequenceDiagram
     end
     
     rect rgb(200, 230, 255)
-    Note over Workers: âœ… Pattern: Competing Consumers
+    Note over Workers: ✅ Pattern: Competing Consumers
     
     par Step 1: Document Verification
         Workers->>Queue: Poll verify_document job
         Queue-->>Workers: Job data
         
         rect rgb(255, 200, 255)
-        Note over Workers: âœ… Pattern: Bulkhead Isolation
+        Note over Workers: ✅ Pattern: Bulkhead Isolation
         Workers->>Workers: Execute in isolated pool<br/>(max concurrency: 5)
         Workers->>Workers: Scan virus (background)
         Workers->>DB: UPDATE application_file
@@ -100,7 +100,7 @@ sequenceDiagram
         
         alt Job Failed
             rect rgb(255, 200, 200)
-            Note over Workers: âœ… Pattern: Retry + Exponential Backoff
+            Note over Workers: ✅ Pattern: Retry + Exponential Backoff
             Workers->>Workers: Retry with backoff<br/>(attempts: 3, delay: 2s, 4s, 8s)
             alt Max retries exceeded
                 Workers->>Queue: Move to DLQ
@@ -112,7 +112,7 @@ sequenceDiagram
         Queue-->>Workers: Job data
         
         rect rgb(255, 200, 255)
-        Note over Workers: âœ… Pattern: Circuit Breaker
+        Note over Workers: ✅ Pattern: Circuit Breaker
         Workers->>CircuitBreaker: Check state
         alt Circuit OPEN
             CircuitBreaker-->>Workers: Fast fail
@@ -144,10 +144,10 @@ sequenceDiagram
     Scheduler->>DB: UPDATE application<br/>(status: 'completed', progress: 100)
     Scheduler->>ReadModel: Refresh read model
     
-    Note over Client,ReadModel: âœ… Total Background Time: 5-15s<br/>âœ… Client Response Time: <500ms<br/>âœ… No blocking, full resilience
+    Note over Client,ReadModel: ✅ Total Background Time: 5-15s<br/>✅ Client Response Time: <500ms<br/>✅ No blocking, full resilience
 ```
 
-## CÃ¡c Design Patterns ÄÆ°á»£c Ãp Dá»¥ng
+## Các Design Patterns Được Áp Dụng
 
 ### 1. Idempotency Pattern
 
@@ -180,7 +180,7 @@ sequenceDiagram
     DB-->>IdempotencyService: Found! status: 'completed'
     
     IdempotencyService-->>Client2: 200 OK (from cache)<br/>{applicationId, statusUrl}
-    Note over Client2: âœ… No duplicate application created!
+    Note over Client2: ✅ No duplicate application created!
 ```
 
 **Implementation:**
@@ -255,10 +255,10 @@ export class IdempotencyService {
 ```
 
 **Benefits:**
-- âœ… Prevents duplicate submissions
-- âœ… Safe retries from client
-- âœ… Prevents double charging
-- âœ… Cached responses for repeated requests
+- ✅ Prevents duplicate submissions
+- ✅ Safe retries from client
+- ✅ Prevents double charging
+- ✅ Cached responses for repeated requests
 
 ---
 ### 2. Circuit Breaker Pattern
@@ -389,15 +389,15 @@ async createPaymentIntent(applicationId: string) {
 
 | State | Behavior | Transition |
 |-------|----------|------------|
-| **CLOSED** | Normal operation, all requests pass through | â†’ OPEN when failure threshold exceeded |
-| **OPEN** | Fast-fail all requests, no calls to service | â†’ HALF_OPEN after timeout period |
-| **HALF_OPEN** | Allow limited test requests | â†’ CLOSED if success, â†’ OPEN if failure |
+| **CLOSED** | Normal operation, all requests pass through | → OPEN when failure threshold exceeded |
+| **OPEN** | Fast-fail all requests, no calls to service | → HALF_OPEN after timeout period |
+| **HALF_OPEN** | Allow limited test requests | → CLOSED if success, → OPEN if failure |
 
 **Benefits:**
-- âœ… Prevents cascading failures
-- âœ… Fast-fail when service is down
-- âœ… Automatic recovery detection
-- âœ… Protects external services from overload
+- ✅ Prevents cascading failures
+- ✅ Fast-fail when service is down
+- ✅ Automatic recovery detection
+- ✅ Protects external services from overload
 
 ---
 
@@ -559,10 +559,10 @@ export class BulkheadService {
 ```
 
 **Benefits:**
-- âœ… Resource isolation between services
-- âœ… One slow service doesn't affect others
-- âœ… Prevents resource starvation
-- âœ… Better fault tolerance
+- ✅ Resource isolation between services
+- ✅ One slow service doesn't affect others
+- ✅ Prevents resource starvation
+- ✅ Better fault tolerance
 
 ---
 
@@ -580,17 +580,17 @@ sequenceDiagram
     
     Queue->>Worker: Job #1 (Attempt 1)
     Worker->>Service: Call API
-    Service--xWorker: âŒ Timeout Error
+    Service--xWorker: ❌ Timeout Error
     
     Note over Worker: Retry #1 after 2 seconds
     Worker->>Worker: Wait 2s (exponential backoff)
     Worker->>Service: Call API (Attempt 2)
-    Service--xWorker: âŒ 500 Internal Server Error
+    Service--xWorker: ❌ 500 Internal Server Error
     
     Note over Worker: Retry #2 after 4 seconds
     Worker->>Worker: Wait 4s (2^2 = 4s)
     Worker->>Service: Call API (Attempt 3)
-    Service--xWorker: âŒ Connection Refused
+    Service--xWorker: ❌ Connection Refused
     
     Note over Worker: Max retries exceeded!
     Worker->>DLQ: Move job to DLQ
@@ -665,13 +665,13 @@ export class DlqService {
 | 2 | 2s | 2s |
 | 3 | 4s | 6s |
 | 4 | 8s | 14s |
-| Failed | â†’ DLQ | - |
+| Failed | → DLQ | - |
 
 **Benefits:**
-- âœ… Handles transient errors automatically
-- âœ… Exponential backoff prevents thundering herd
-- âœ… DLQ ensures no jobs are lost
-- âœ… Alerting for manual intervention
+- ✅ Handles transient errors automatically
+- ✅ Exponential backoff prevents thundering herd
+- ✅ DLQ ensures no jobs are lost
+- ✅ Alerting for manual intervention
 
 ---
 
@@ -692,13 +692,13 @@ sequenceDiagram
     Service->>DB: INSERT INTO application_file
     
     rect rgb(200, 255, 200)
-    Note right of Service: âœ… Same transaction!
+    Note right of Service: ✅ Same transaction!
     Service->>OutboxTable: INSERT INTO outbox<br/>(eventType: 'document_uploaded')
     Service->>OutboxTable: INSERT INTO outbox<br/>(eventType: 'application_submitted')
     end
     
     Service->>DB: COMMIT TRANSACTION
-    Note over Service,DB: âœ… Atomic: both data + events committed together
+    Note over Service,DB: ✅ Atomic: both data + events committed together
     
     Service-->>Service: Return to client (fast!)
     
@@ -742,7 +742,7 @@ async createApplication(userId: string, dto: CreateApplicationDto) {
       });
     }
 
-    // âœ… Create outbox events in SAME transaction
+    // ✅ Create outbox events in SAME transaction
     await tx.outbox.create({
       data: {
         eventType: 'document_uploaded',
@@ -822,26 +822,26 @@ export class OutboxRelayScheduler {
 ```
 
 **Benefits:**
-- âœ… Guaranteed message delivery (transactional)
-- âœ… At-least-once delivery semantics
-- âœ… Data consistency between DB and events
-- âœ… No message loss even if queue is down
+- ✅ Guaranteed message delivery (transactional)
+- ✅ At-least-once delivery semantics
+- ✅ Data consistency between DB and events
+- ✅ No message loss even if queue is down
 
 ---
 
 ### 6. Queue-Based Load Leveling + Competing Consumers
 
-Há»‡ thá»‘ng sá»­ dá»¥ng **BullMQ (Redis-based queue)** Ä‘á»ƒ smooths out traffic spikes vÃ  xá»­ lÃ½ cÃ´ng viá»‡c ná»n má»™t cÃ¡ch hiá»‡u quáº£. Competing Consumers pattern cho phÃ©p nhiá»u workers cÃ¹ng xá»­ lÃ½ jobs tá»« cÃ¹ng má»™t queue, tÄƒng throughput vÃ  kháº£ nÄƒng chá»‹u táº£i.
+Hệ thống sử dụng **BullMQ (Redis-based queue)** để smooths out traffic spikes và xử lý công việc nền một cách hiệu quả. Competing Consumers pattern cho phép nhiều workers cùng xử lý jobs từ cùng một queue, tăng throughput và khả năng chịu tải.
 
 #### 6.1. Queue Architecture
 
 ```mermaid
 graph TB
     subgraph "Client Layer - Spiky Traffic"
-        C1[ðŸ‘¤ Request 1]
-        C2[ðŸ‘¤ Request 2]
-        C3[ðŸ‘¤ Request 3]
-        C100[ðŸ‘¤ Request 100...]
+        C1[👤 Request 1]
+        C2[👤 Request 2]
+        C3[👤 Request 3]
+        C100[👤 Request 100...]
     end
     
     subgraph "API Layer - Fast Response <500ms"
@@ -850,9 +850,9 @@ graph TB
     end
     
     subgraph "Queue Layer - BullMQ/Redis Buffer"
-        Q1["ðŸ“‹ verify_document<br/>Priority: High (1)<br/>Retry: 3x, Exp backoff 2s"]
-        Q2["ðŸ’³ create_payment<br/>Priority: Highest (0)<br/>Retry: 3x, Exp backoff 2s"]
-        Q3["ðŸ“§ send_email<br/>Priority: Low (2)<br/>Retry: 2x, Exp backoff 1s"]
+        Q1["📋 verify_document<br/>Priority: High (1)<br/>Retry: 3x, Exp backoff 2s"]
+        Q2["💳 create_payment<br/>Priority: Highest (0)<br/>Retry: 3x, Exp backoff 2s"]
+        Q3["📧 send_email<br/>Priority: Low (2)<br/>Retry: 2x, Exp backoff 1s"]
     end
     
     subgraph "Worker Pool - Competing Consumers"
@@ -916,7 +916,7 @@ graph TB
 
 #### 6.2. Producer - QueueProducerService
 
-Service nÃ y chá»‹u trÃ¡ch nhiá»‡m enqueue jobs vÃ o cÃ¡c Redis queues vá»›i configuration phÃ¹ há»£p.
+Service này chịu trách nhiệm enqueue jobs vào các Redis queues với configuration phù hợp.
 
 ```typescript
 // backend/src/feature-flags/queue/queue-producer.service.ts
@@ -1305,7 +1305,7 @@ sequenceDiagram
         W3->>Q: ACK job #6
     end
     
-    Note over Q,DB: âœ… 3 workers process 6 jobs in parallel<br/>Throughput: 3x faster than single worker
+    Note over Q,DB: ✅ 3 workers process 6 jobs in parallel<br/>Throughput: 3x faster than single worker
 ```
 
 #### 6.5. Worker Pool Management
@@ -1483,7 +1483,7 @@ export class WorkerScalingService implements OnModuleInit {
         const newWorkerCount = Math.min(currentWorkers + 1, config.maxWorkers);
         this.scaleWorkers(queueName, newWorkerCount);
         this.logger.log(
-          `Scaled UP '${queueName}': ${currentWorkers} â†’ ${newWorkerCount} workers ` +
+          `Scaled UP '${queueName}': ${currentWorkers} → ${newWorkerCount} workers ` +
           `(waiting: ${waitingCount}, threshold: ${config.scaleUpThreshold})`
         );
       }
@@ -1494,7 +1494,7 @@ export class WorkerScalingService implements OnModuleInit {
           const newWorkerCount = Math.max(currentWorkers - 1, config.minWorkers);
           this.scaleWorkers(queueName, newWorkerCount);
           this.logger.log(
-            `Scaled DOWN '${queueName}': ${currentWorkers} â†’ ${newWorkerCount} workers ` +
+            `Scaled DOWN '${queueName}': ${currentWorkers} → ${newWorkerCount} workers ` +
             `(waiting: ${waitingCount}, threshold: ${config.scaleDownThreshold})`
           );
         }
@@ -1524,8 +1524,8 @@ graph LR
     
     subgraph "Queue Depth"
         Q1[5 jobs waiting]
-        Q2[60 jobs waiting<br/>âš ï¸ Threshold: 50]
-        Q3[150 jobs waiting<br/>âš ï¸ Threshold: 50]
+        Q2[60 jobs waiting<br/>⚠️ Threshold: 50]
+        Q3[150 jobs waiting<br/>⚠️ Threshold: 50]
         Q4[8 jobs waiting]
     end
     
@@ -1545,22 +1545,22 @@ graph LR
 #### 6.7. Benefits
 
 **Queue-Based Load Leveling:**
-- âœ… **Smooths traffic spikes**: 500 req/s spike â†’ steady 50 req/s processing
-- âœ… **Prevents database overload**: Queue acts as buffer, protects DB from connection pool exhaustion
-- âœ… **Graceful degradation**: System remains responsive even under extreme load
-- âœ… **Job prioritization**: Critical payments processed before non-urgent emails
+- ✅ **Smooths traffic spikes**: 500 req/s spike → steady 50 req/s processing
+- ✅ **Prevents database overload**: Queue acts as buffer, protects DB from connection pool exhaustion
+- ✅ **Graceful degradation**: System remains responsive even under extreme load
+- ✅ **Job prioritization**: Critical payments processed before non-urgent emails
 
 **Competing Consumers:**
-- âœ… **Parallel processing**: 3-10 workers process jobs concurrently
-- âœ… **Horizontal scalability**: Add more worker instances without code changes
-- âœ… **Fault isolation**: Worker crash doesn't affect others, job automatically retried
-- âœ… **Load distribution**: BullMQ distributes jobs evenly across available workers
+- ✅ **Parallel processing**: 3-10 workers process jobs concurrently
+- ✅ **Horizontal scalability**: Add more worker instances without code changes
+- ✅ **Fault isolation**: Worker crash doesn't affect others, job automatically retried
+- ✅ **Load distribution**: BullMQ distributes jobs evenly across available workers
 
 **Auto-Scaling:**
-- âœ… **Dynamic capacity**: Automatically scale 2â†’10 workers based on queue depth
-- âœ… **Cost optimization**: Scale down to minimum during off-peak hours
-- âœ… **Self-healing**: Detect and respond to traffic patterns without manual intervention
-- âœ… **Cooldown protection**: Prevent thrashing with 20-30s cooldown periods
+- ✅ **Dynamic capacity**: Automatically scale 2→10 workers based on queue depth
+- ✅ **Cost optimization**: Scale down to minimum during off-peak hours
+- ✅ **Self-healing**: Detect and respond to traffic patterns without manual intervention
+- ✅ **Cooldown protection**: Prevent thrashing with 20-30s cooldown periods
 
 **Operational Metrics:**
 
@@ -1573,8 +1573,6 @@ graph LR
 | **Throughput** | 10 jobs/min | 150+ jobs/min | **15x throughput** |
 
 ---
-
-
 
 ### 7. CQRS-lite (Read Model)
 
@@ -1708,10 +1706,10 @@ export class ApplicationReadService {
 ```
 
 **Benefits:**
-- âœ… Optimized read queries (no joins)
-- âœ… Caching layer reduces DB load
-- âœ… Separation of read/write concerns
-- âœ… Fast status queries
+- ✅ Optimized read queries (no joins)
+- ✅ Caching layer reduces DB load
+- ✅ Separation of read/write concerns
+- ✅ Fast status queries
 
 ---
 
@@ -1742,44 +1740,44 @@ gantt
 
 | Metric | Before Patterns | After Patterns | Improvement |
 |--------|----------------|----------------|-------------|
-| **Client Response Time** | 5-15 seconds | <500ms | **ðŸš€ 30x faster** |
-| **Throughput** | 1-2 req/s | 100+ req/s | **ðŸš€ 50x more** |
-| **Error Rate** | 15-20% | <1% | **âœ… 20x better** |
-| **Availability** | 95% | 99.9% | **âœ… Higher SLA** |
-| **Resource Utilization** | 80% idle | 60-70% active | **âœ… More efficient** |
+| **Client Response Time** | 5-15 seconds | <500ms | **🚀 30x faster** |
+| **Throughput** | 1-2 req/s | 100+ req/s | **🚀 50x more** |
+| **Error Rate** | 15-20% | <1% | **✅ 20x better** |
+| **Availability** | 95% | 99.9% | **✅ Higher SLA** |
+| **Resource Utilization** | 80% idle | 60-70% active | **✅ More efficient** |
 
 ---
 
-## Tá»•ng Káº¿t
+## Tổng Kết
 
-### âœ… Benefits Achieved
+### ✅ Benefits Achieved
 
-1. **Performance** ðŸš€
+1. **Performance** 🚀
    - Fast API responses (<500ms)
    - High throughput (100+ req/s)
    - Efficient resource usage
 
-2. **Reliability** ðŸ’ª
+2. **Reliability** 💪
    - Automatic retries with backoff
    - Circuit breaker protection
    - No message loss (outbox pattern)
 
-3. **Scalability** ðŸ“ˆ
+3. **Scalability** 📈
    - Horizontal scaling (add workers)
    - Load leveling (queue buffering)
    - Resource isolation (bulkhead)
 
-4. **Data Integrity** âœ…
+4. **Data Integrity** ✅
    - Idempotency (no duplicates)
    - Transactional messaging (outbox)
    - CQRS read model consistency
 
-5. **Observability** ðŸ‘€
+5. **Observability** 👀
    - Metrics tracking
    - DLQ monitoring
    - Progress visibility
 
-### ðŸŽ¯ Design Patterns Applied
+### 🎯 Design Patterns Applied
 
 | Pattern | Problem Solved | Implementation |
 |---------|---------------|----------------|
@@ -1794,7 +1792,7 @@ gantt
 
 ---
 
-## Tham Kháº£o
+## Tham Khảo
 
 - [System Flow Before Patterns](./SYSTEM_FLOW_BEFORE_PATTERNS.md)
 - [Backend Architecture](./ARCHITECTURE.md)
@@ -1803,6 +1801,6 @@ gantt
 
 ---
 
-**NgÃ y táº¡o:** 2025-12-04  
-**TÃ¡c giáº£:** System Analysis Team  
+**Ngày tạo:** 2025-12-04  
+**Tác giả:** System Analysis Team  
 **Version:** 1.0.0
