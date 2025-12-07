@@ -1123,22 +1123,22 @@ graph LR
 #### 3.7. Benefits
 
 **Queue-Based Load Leveling:**
-- ✅ **Smooths traffic spikes**: 500 req/s spike → steady 50 req/s processing
-- ✅ **Prevents database overload**: Queue acts as buffer, protects DB from connection pool exhaustion
-- ✅ **Graceful degradation**: System remains responsive even under extreme load
-- ✅ **Job prioritization**: Critical payments processed before non-urgent emails
+- ✅ **Smooths traffic spikes**: Redis queue buffers incoming requests, preventing system overload
+- ✅ **Prevents database overload**: BullMQ acts as buffer, protects PostgreSQL from connection pool exhaustion
+- ✅ **Graceful degradation**: System remains responsive even under extreme load with 202 Accepted responses
+- ✅ **Job prioritization**: Critical payments (priority 0) processed before non-urgent emails (priority 2)
 
 **Competing Consumers:**
-- ✅ **Parallel processing**: 3-10 workers process jobs concurrently
-- ✅ **Horizontal scalability**: Add more worker instances without code changes
-- ✅ **Fault isolation**: Worker crash doesn't affect others, job automatically retried
-- ✅ **Load distribution**: BullMQ distributes jobs evenly across available workers
+- ✅ **Parallel processing**: Document verification (3 workers), payment processing (5 workers), email sending (10 workers)
+- ✅ **Horizontal scalability**: Add more worker instances through configuration without code changes
+- ✅ **Fault isolation**: Worker crash doesn't affect others, BullMQ automatically retries failed jobs
+- ✅ **Load distribution**: BullMQ distributes jobs evenly across available worker instances
 
 **Auto-Scaling:**
-- ✅ **Dynamic capacity**: Automatically scale 2→10 workers based on queue depth
-- ✅ **Cost optimization**: Scale down to minimum during off-peak hours
-- ✅ **Self-healing**: Detect and respond to traffic patterns without manual intervention
-- ✅ **Cooldown protection**: Prevent thrashing with 20-30s cooldown periods
+- ✅ **Dynamic capacity**: Document verification (2-10 workers), payment processing (3-15 workers), email sending (2-8 workers)
+- ✅ **Cost optimization**: Scale down to minimum workers during off-peak hours automatically
+- ✅ **Self-healing**: Detect queue depth thresholds and respond to traffic patterns without manual intervention
+- ✅ **Cooldown protection**: Prevent thrashing with 20-30s cooldown periods between scaling actions
 
 **Operational Metrics:**
 
