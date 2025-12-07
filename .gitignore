@@ -165,7 +165,7 @@ desktop.ini
 
 # Docker
 .docker/
-docker-compose.prod.yml
+# docker-compose.prod.yml
 
 # Test reports
 test-reports/
