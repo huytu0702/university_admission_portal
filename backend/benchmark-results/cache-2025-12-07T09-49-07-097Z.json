@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-12-07T08:41:31.732Z",
+  "timestamp": "2025-12-07T09:49:07.093Z",
   "config": {
     "totalRequests": 50,
     "warmupRequests": 10
@@ -11,13 +11,13 @@
   "results": {
     "coldReadLatencies": "[10 samples]",
     "warmReadLatencies": "[50 samples]",
-    "avgColdLatency": 8.7,
-    "avgWarmLatency": 7.04,
-    "p95ColdLatency": 10,
-    "p95WarmLatency": 8,
+    "avgColdLatency": 10,
+    "avgWarmLatency": 8.64,
+    "p95ColdLatency": 12,
+    "p95WarmLatency": 10,
     "cacheHitRate": 0,
-    "latencyImprovement": 19.080459770114935
+    "latencyImprovement": 13.599999999999996
   },
   "verdict": "DEGRADED",
-  "message": "⚠️  Cache showing modest improvement: 19.1%"
+  "message": "⚠️  Cache showing modest improvement: 13.6%"
 }

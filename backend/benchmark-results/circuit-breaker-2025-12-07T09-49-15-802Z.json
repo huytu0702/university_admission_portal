@@ -1,5 +1,5 @@
 {
-  "timestamp": "2025-12-07T08:42:17.079Z",
+  "timestamp": "2025-12-07T09:49:15.797Z",
   "config": {
     "totalRequests": 30,
     "burstSize": 10,
@@ -14,8 +14,8 @@
     "successfulRequests": 30,
     "failedRequests": 0,
     "circuitOpenRejects": 0,
-    "avgLatency": 32.266666666666666,
-    "maxLatency": 39,
+    "avgLatency": 46.833333333333336,
+    "maxLatency": 67,
     "circuitStateChanges": [],
     "finalCircuitState": null
   },

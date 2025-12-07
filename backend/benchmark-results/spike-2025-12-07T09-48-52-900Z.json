@@ -1,28 +1,28 @@
 {
-  "timestamp": "2025-12-07T08:06:39.360Z",
+  "timestamp": "2025-12-07T09:48:52.893Z",
   "config": {
-    "connections": 5,
-    "duration": 3,
+    "connections": 1000,
+    "duration": 30,
     "waitForQueueDrain": true,
-    "queueDrainTimeout": 60
+    "queueDrainTimeout": 600
   },
   "httpResults": {
-    "totalRequests": 827,
-    "successfulRequests": 827,
+    "totalRequests": 5000,
+    "successfulRequests": 5000,
     "errors": 0,
     "timeouts": 0,
     "errorRate": 0,
     "successRate": 100,
-    "avgLatency": 17.68,
-    "maxLatency": 138
+    "avgLatency": 6740.85,
+    "maxLatency": 9255
   },
   "processingResults": {
-    "totalProcessed": 10,
-    "completedJobs": 10,
+    "totalProcessed": 3560,
+    "completedJobs": 3560,
     "failedJobs": 0,
-    "queueDrainTimeMs": 2049,
-    "totalProcessingTimeMs": 5091,
-    "avgJobsPerSecond": 1.9642506383814573
+    "queueDrainTimeMs": 114964,
+    "totalProcessingTimeMs": 145604,
+    "avgJobsPerSecond": 24.449877750611243
   },
   "patternsEnabled": {
     "queueBasedLoadLeveling": true,

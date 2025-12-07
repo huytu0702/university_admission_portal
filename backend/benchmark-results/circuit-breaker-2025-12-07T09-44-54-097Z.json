@@ -1,0 +1,24 @@
+{
+  "timestamp": "2025-12-07T09:44:54.091Z",
+  "config": {
+    "totalRequests": 30,
+    "burstSize": 10,
+    "requestDelayMs": 100
+  },
+  "patternsEnabled": {
+    "circuitBreaker": false,
+    "bulkheadIsolation": false
+  },
+  "results": {
+    "totalRequests": 30,
+    "successfulRequests": 30,
+    "failedRequests": 0,
+    "circuitOpenRejects": 0,
+    "avgLatency": 30.666666666666668,
+    "maxLatency": 49,
+    "circuitStateChanges": [],
+    "finalCircuitState": null
+  },
+  "verdict": "GOOD",
+  "message": "✅ All requests succeeded without circuit breaker"
+}

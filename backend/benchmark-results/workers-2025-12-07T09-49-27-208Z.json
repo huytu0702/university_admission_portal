@@ -1,0 +1,58 @@
+{
+  "timestamp": "2025-12-07T09:49:27.202Z",
+  "config": {
+    "totalJobs": 20,
+    "waitTimeoutSeconds": 600
+  },
+  "patternsEnabled": {
+    "queueBasedLoadLeveling": true,
+    "competingConsumers": true,
+    "retryExponentialBackoff": true
+  },
+  "results": {
+    "jobsSubmitted": 20,
+    "jobsCompleted": 40,
+    "jobsFailed": 0,
+    "jobsRetried": 0,
+    "dlqJobs": 0,
+    "processingTimeMs": 6920,
+    "avgThroughput": 5.780346820809249,
+    "queueMetrics": [
+      {
+        "queueName": "verify_document",
+        "currentWorkers": 2,
+        "queueDepth": 0,
+        "waitingJobs": 0,
+        "activeJobs": 0,
+        "completedJobs": 2,
+        "failedJobs": 0,
+        "lastScalingAction": null,
+        "lastScalingTime": null
+      },
+      {
+        "queueName": "create_payment",
+        "currentWorkers": 3,
+        "queueDepth": 0,
+        "waitingJobs": 0,
+        "activeJobs": 0,
+        "completedJobs": 37017,
+        "failedJobs": 0,
+        "lastScalingAction": "auto",
+        "lastScalingTime": "2025-12-07T09:49:08.511Z"
+      },
+      {
+        "queueName": "send_email",
+        "currentWorkers": 3,
+        "queueDepth": 0,
+        "waitingJobs": 0,
+        "activeJobs": 0,
+        "completedJobs": 37017,
+        "failedJobs": 0,
+        "lastScalingAction": "auto",
+        "lastScalingTime": "2025-12-07T09:49:08.516Z"
+      }
+    ]
+  },
+  "verdict": "GOOD",
+  "message": "✅ Queue processing efficient! 100.0% success, 5.8 jobs/sec"
+}

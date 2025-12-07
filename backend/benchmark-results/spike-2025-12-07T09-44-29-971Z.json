@@ -1,0 +1,34 @@
+{
+  "timestamp": "2025-12-07T09:44:29.965Z",
+  "config": {
+    "connections": 1000,
+    "duration": 30,
+    "waitForQueueDrain": true,
+    "queueDrainTimeout": 600
+  },
+  "httpResults": {
+    "totalRequests": 7867,
+    "successfulRequests": 4087,
+    "errors": 3546,
+    "timeouts": 234,
+    "errorRate": 45.07436125587898,
+    "successRate": 51.951188508961486,
+    "avgLatency": 8062.39,
+    "maxLatency": 27830
+  },
+  "processingResults": {
+    "totalProcessed": 0,
+    "completedJobs": 0,
+    "failedJobs": 0,
+    "queueDrainTimeMs": 0,
+    "totalProcessingTimeMs": 30465,
+    "avgJobsPerSecond": 0
+  },
+  "patternsEnabled": {
+    "queueBasedLoadLeveling": false,
+    "bulkheadIsolation": false,
+    "circuitBreaker": false
+  },
+  "verdict": "DEGRADED",
+  "message": "⚠️  Moderate failure rate without patterns - enable patterns for better resilience"
+}
