@@ -1733,22 +1733,6 @@ graph TB
 
 **Read Model:** `application_view` (PostgreSQL VIEW)
 
-```sql
-CREATE OR REPLACE VIEW application_view AS
-SELECT 
-  id,
-  "userId",
-  status,
-  progress,
-  "createdAt",
-  "updatedAt"
-FROM "Application";
-
--- Index trên bảng gốc (không thể tạo index trên VIEW)
-CREATE INDEX IF NOT EXISTS "Application_userId_idx" ON "Application"("userId");
-CREATE INDEX IF NOT EXISTS "Application_updatedAt_idx" ON "Application"("updatedAt" DESC);
-```
-
 **Đặc điểm:**
 - ✅ **Denormalized**: Không có JOIN → query nhanh hơn
 - ✅ **Auto-sync**: VIEW tự động reflect changes từ `Application` table
@@ -1895,22 +1879,17 @@ Tại sao cascade? Vì list cache chứa application với data cũ, phải xóa
 - ✅ **Reduced DB load**: Majority of queries served from cache
 - ✅ **Graceful degradation**: System works even if Redis fails
 - ✅ **TTL-based expiration**: Auto cleanup stale data
-- ✅ **Feature flag controlled**: Can enable/disable via `cache-aside` flag
-- ✅ **Horizontal scalability**: Redis can scale independently
 
 **CQRS-lite Pattern:**
 - ✅ **Read/write separation**: Optimize independently for each use case
 - ✅ **Denormalized read model**: No JOINs → simpler queries
 - ✅ **Auto-sync VIEW**: Automatically reflects changes from write model
 - ✅ **Fallback strategy**: Works during migrations when VIEW not available
-- ✅ **No Prisma model needed**: Query with `$queryRaw` for flexibility
-- ✅ **Feature flag controlled**: Can enable/disable via `cqrs-lite` flag
 
 **Combined Benefits:**
 - ✅ **3-tier fallback**: Redis → application_view → Application
 - ✅ **High availability**: Multiple fallback levels ensure uptime
 - ✅ **Improved scalability**: Cache and read model reduce DB bottleneck
-- ✅ **Flexible deployment**: Can enable/disable patterns via feature flag
 ---
 
 
