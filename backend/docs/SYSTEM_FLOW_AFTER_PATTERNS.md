@@ -1565,129 +1565,207 @@ graph LR
 
 ---
 
-### 7. CQRS-lite & Cache-Aside Pattern (Milestone 5)
+### 7. Cache-Aside & CQRS-lite Pattern
 
-Milestone 5 tối ưu hóa **read operations** thông qua Cache-Aside (Redis) và CQRS-lite (`application_view`), kèm theo **real-time status updates** qua Server-Sent Events (SSE).
-
----
-
-#### 7.1. Kiến Trúc Tổng Quan
-
-```mermaid
-graph TB
-    subgraph "Write Side"
-        Write[POST /applications]
-        WriteDB[(application table)]
-    end
-    
-    subgraph "Read Side"
-        Read[GET /read/applications]
-        Cache[Redis Cache<br/>TTL: 60s]
-        ReadDB[(application_view)]
-        SourceDB[(application<br/>fallback)]
-    end
-    
-    subgraph "Real-time"
-        SSE[SSE Stream]
-        Stream[StatusStream]
-    end
-    
-    Write --> WriteDB
-    Write -.->|warm cache| Cache
-    
-    Read -->|1. Try cache| Cache
-    Cache -->|miss| ReadDB
-    ReadDB -->|not found| SourceDB
-    SourceDB --> Cache
-    Cache --> Read
-    
-    Write -.->|emit event| Stream
-    Stream --> SSE
-    
-    style Cache fill:#FFD700
-    style Stream fill:#87CEEB
-```
-
-**Luồng hoạt động:**
-1. **Write**: Tạo application → ghi DB → warm cache (async)
-2. **Read**: Query → Redis (3ms) → application_view (120ms) → application (fallback)
-3. **Real-time**: Status change → emit SSE → browser updates
+Hai patterns này tối ưu hóa **read operations** bằng cách giảm database load và tăng tốc độ response, đồng thời tách biệt read model và write model để scale độc lập.
 
 ---
 
-#### 7.2. Cache-Aside Implementation
+#### 7.1. Vấn Đề
+
+**Trước khi áp dụng patterns:**
 
 ```mermaid
 sequenceDiagram
     participant Client
-    participant Service as ApplicationReadService
-    participant Cache as Redis
+    participant API as ApplicationsController
     participant DB as PostgreSQL
     
-    Note over Client,DB: Cache Hit (Fast Path)
-    Client->>Service: getById(app-123)
-    Service->>Cache: GET application:123
-    Cache-->>Service: ✅ Data found
-    Service-->>Client: Return (3ms)
+    Note over Client,DB: Mọi read request đều hit database
     
-    Note over Client,DB: Cache Miss (Slow Path)
-    Client->>Service: getById(app-456)
-    Service->>Cache: GET application:456
-    Cache-->>Service: ❌ Miss
-    Service->>DB: Query application_view
-    DB-->>Service: Data
-    Service->>Cache: SET application:456, TTL=60s
-    Service-->>Client: Return (120ms)
+    loop Multiple concurrent requests
+        Client->>API: GET /applications/:id
+        API->>DB: SELECT * FROM "Application"<br/>JOIN application_files<br/>JOIN payment
+        DB-->>API: Complex query with JOINs
+        API-->>Client: Response
+    end
+    
+    Note over DB: ❌ Database overload<br/>❌ High latency<br/>❌ No caching
 ```
 
-**Code:**
-
-```typescript
-// application-read.service.ts
-async getById(applicationId: string): Promise<ApplicationView> {
-  const [useCache, useView] = await this.getFlags();
-  
-  // 1. Try cache first
-  if (useCache) {
-    const cached = await this.cache.get<ApplicationView>(cacheKey);
-    if (cached) return cached; // ✅ 3ms
-  }
-
-  // 2. Query DB (view → source fallback)
-  const data = await this.viewService.getView(applicationId, useView);
-  if (!data) throw new NotFoundException();
-
-  // 3. Populate cache
-  if (useCache) {
-    await this.cache.set(cacheKey, data, 60); // TTL: 60s
-  }
-  
-  return data;
-}
-
-async listForUser(userId: string): Promise<ApplicationView[]> {
-  // Same pattern for list queries
-  const cacheKey = `application:list:${userId}`;
-  // Try cache → Query DB → Populate cache
-}
-```
-
-**Cache Keys:**
-- Single: `application:{id}`
-- List: `application:list:{userId}`
+**Vấn đề:**
+- ❌ **High latency**: Mọi read query hit database trực tiếp
+- ❌ **Database overload**: Read queries chiếm tài nguyên DB
+- ❌ **Poor scalability**: Database là bottleneck cho read-heavy workload
+- ❌ **No separation**: Read và write dùng chung table với JOINs phức tạp
 
 ---
 
-#### 7.3. CQRS-lite với Fallback Strategy
+#### 7.2. Cache-Aside Pattern
+
+Cache-Aside (Lazy Loading) pattern đặt một **cache layer** (Redis) giữa application và database.
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API as ApplicationReadService
+    participant Cache as Redis Cache
+    participant View as application_view
+    participant DB as Application Table
+    
+    Note over Client,DB: Cache-Aside Flow với CQRS Fallback
+    
+    Client->>API: GET /read/applications/:id
+    
+    rect rgb(255, 240, 200)
+    Note over API,Cache: Step 1: Check Cache
+    API->>Cache: GET application:123
+    
+    alt Cache Hit
+        Cache-->>API: ✅ Data found
+        API-->>Client: Return cached data
+        Note over Client: ✅ Fast response
+    else Cache Miss
+        Cache-->>API: ❌ Not found
+    end
+    end
+    
+    rect rgb(200, 255, 200)
+    Note over API,DB: Step 2: Query Database (CQRS-lite)
+    API->>View: SELECT * FROM application_view
+    
+    alt View Available
+        View-->>API: ✅ Data from VIEW
+    else View Not Found
+        API->>DB: SELECT * FROM "Application"
+        DB-->>API: ✅ Data from table
+    end
+    end
+    
+    rect rgb(200, 230, 255)
+    Note over API,Cache: Step 3: Populate Cache
+    API->>Cache: SET application:123<br/>TTL: configurable
+    API-->>Client: Return data
+    Note over Client: ⚠️ First request slower<br/>✅ Next requests fast
+    end
+```
+
+**Flow:**
+1. **Check cache first**: Application kiểm tra Redis trước
+2. **Cache hit**: Return ngay lập tức từ cache - không hit database
+3. **Cache miss**: Query database (VIEW → table fallback) → populate cache → return
+4. **Next request**: Serve từ cache (fast)
+
+**Implementation:**
 
 ```typescript
-// application-view.service.ts
+@Injectable()
+export class ApplicationReadService {
+  async getById(applicationId: string): Promise<ApplicationView> {
+    const [useCache, useView] = await this.getFlags();
+    const cacheKey = this.getApplicationKey(applicationId);
+    
+    // Step 1: Try cache first (if enabled)
+    if (useCache) {
+      const cached = await this.cache.get<ApplicationView>(cacheKey);
+      if (cached) return cached; // ✅ Cache hit
+    }
+
+    // Step 2: Cache miss → Query DB (VIEW or table)
+    const data = await this.viewService.getView(applicationId, useView);
+    if (!data) throw new NotFoundException();
+
+    // Step 3: Populate cache for next request
+    if (useCache) {
+      await this.cache.set(cacheKey, data, APPLICATION_CACHE_TTL);
+    }
+    
+    return data;
+  }
+}
+```
+
+**Cache Keys Strategy:**
+
+| Key Pattern | Example | Purpose |
+|-------------|---------|---------|
+| `application:{id}` | `application:app-123` | Single application cache |
+| `application:list:{userId}` | `application:list:user-456` | User's list cache |
+
+**Cache Configuration:**
+- **TTL**: Configurable via `APPLICATION_CACHE_TTL_SECONDS` env (default: 60s)
+- **Eviction**: TTL-based expiration + manual invalidation
+- **Graceful degradation**: Nếu Redis down → fallback to database
+
+---
+
+#### 7.3. CQRS-lite Pattern
+
+CQRS-lite tách biệt **read model** và **write model** để tối ưu riêng cho từng use case.
+
+```mermaid
+graph TB
+    subgraph "Write Model (Command)"
+        Write[Write Operations<br/>POST /applications]
+        WriteDB[("Application" table<br/>Normalized, có JOIN)]
+    end
+    
+    subgraph "Read Model (Query)"
+        Read[Read Operations<br/>GET /read/applications]
+        ReadView[("application_view"<br/>Denormalized, no JOIN)]
+    end
+    
+    subgraph "Sync Mechanism"
+        ViewSync["CREATE OR REPLACE VIEW<br/>(auto-sync)"]
+    end
+    
+    Write --> WriteDB
+    WriteDB --> ViewSync
+    ViewSync --> ReadView
+    Read --> ReadView
+    ReadView -.->|Fallback| WriteDB
+    
+    style WriteDB fill:#FFB6C1
+    style ReadView fill:#90EE90
+    style ViewSync fill:#FFD700
+```
+
+**Read Model:** `application_view` (PostgreSQL VIEW)
+
+```sql
+CREATE OR REPLACE VIEW application_view AS
+SELECT 
+  id,
+  "userId",
+  status,
+  progress,
+  "createdAt",
+  "updatedAt"
+FROM "Application";
+
+-- Index trên bảng gốc (không thể tạo index trên VIEW)
+CREATE INDEX IF NOT EXISTS "Application_userId_idx" ON "Application"("userId");
+CREATE INDEX IF NOT EXISTS "Application_updatedAt_idx" ON "Application"("updatedAt" DESC);
+```
+
+**Đặc điểm:**
+- ✅ **Denormalized**: Không có JOIN → query nhanh hơn
+- ✅ **Auto-sync**: VIEW tự động reflect changes từ `Application` table
+- ✅ **Read-optimized**: Chỉ select các fields cần thiết cho read operations
+- ✅ **No Prisma model**: Query bằng `$queryRaw` (VIEW không có Prisma model)
+
+**Fallback Strategy:**
+
+```typescript
 async getView(applicationId: string, useView = true): Promise<ApplicationView | null> {
   if (useView) {
+    // Try application_view first
     const fromView = await this.getFromView(applicationId);
-    if (fromView) return fromView; // ✅ Fast: application_view
+    if (fromView) return fromView; // ✅ Fast path
   }
-  return this.getFromSource(applicationId); // ✅ Fallback: application
+  
+  // Fallback to Application table
+  return this.getFromSource(applicationId);
 }
 
 private async getFromView(applicationId: string): Promise<ApplicationView | null> {
@@ -1700,8 +1778,8 @@ private async getFromView(applicationId: string): Promise<ApplicationView | null
     `;
     return rows[0] || null;
   } catch (err) {
-    // ✅ Graceful: view table might not exist
-    this.logger.debug(`application_view fallback: ${err.message}`);
+    // ✅ Graceful: VIEW might not exist during migration
+    this.logger.debug(`application_view not available, falling back`);
     return null;
   }
 }
@@ -1714,154 +1792,124 @@ private async getFromSource(applicationId: string): Promise<ApplicationView | nu
 }
 ```
 
-**Application_view Schema:**
-
-```sql
-CREATE TABLE application_view (
-  id TEXT PRIMARY KEY,
-  "userId" TEXT NOT NULL,
-  status TEXT NOT NULL,
-  progress INTEGER,
-  "createdAt" TIMESTAMP NOT NULL,
-  "updatedAt" TIMESTAMP NOT NULL
-);
-
-CREATE INDEX idx_application_view_user_id ON application_view("userId");
-CREATE INDEX idx_application_view_updated_at ON application_view("updatedAt" DESC);
-```
-
 ---
 
-#### 7.4. Cache Invalidation
+#### 7.4. Cache Invalidation Strategy
+
+**Vấn đề:** Khi data trong database thay đổi, cache cũ trở nên stale (lỗi thời).
+
+**Giải pháp:** Invalidate (xóa) cache khi data thay đổi.
+
+```mermaid
+sequenceDiagram
+    participant Worker as Background Worker
+    participant Service as ApplicationsService
+    participant ReadService as ApplicationReadService
+    participant Cache as Redis
+    participant DB as PostgreSQL
+    
+    Note over Worker,DB: Cache Invalidation Flow
+    
+    Worker->>Service: Job completed (status changed)
+    Service->>DB: UPDATE "Application"<br/>SET status = 'verified'
+    
+    Service->>ReadService: refresh(applicationId)
+    
+    rect rgb(255, 240, 200)
+    Note over ReadService,DB: Fetch Latest Data
+    ReadService->>DB: Query application_view
+    DB-->>ReadService: Latest data
+    end
+    
+    rect rgb(200, 255, 200)
+    Note over ReadService,Cache: Update & Invalidate Cache
+    ReadService->>Cache: SET application:123 (update single)
+    ReadService->>Cache: DEL application:list:user-456 (cascade)
+    end
+    
+    Note over ReadService: ✅ Next read: fresh data
+```
+
+**Implementation:**
 
 ```typescript
 async refresh(applicationId: string): Promise<ApplicationView> {
-  const data = await this.viewService.getView(applicationId, useView);
+  const [useCache, useView] = await this.getFlags();
   
-  if (useCache) {
-    // Update single cache
-    await this.cache.set(this.getApplicationKey(applicationId), data, TTL);
-    // ✅ Invalidate list cache (cascade)
-    await this.cache.del(this.getUserListKey(data.userId));
+  // Fetch latest data from DB
+  const data = await this.viewService.getView(applicationId, useView);
+  if (!data) {
+    throw new NotFoundException(`Application ${applicationId} not found`);
   }
   
-  // ✅ Emit SSE event
-  this.statusStream.emit({
-    applicationId,
-    status: data.status,
-    progress: data.progress,
-    updatedAt: data.updatedAt,
-  });
+  if (useCache) {
+    // Update single item cache
+    await this.cache.set(this.getApplicationKey(applicationId), data, APPLICATION_CACHE_TTL);
+    
+    // ✅ Cascade invalidation: Delete list cache
+    // (vì list chứa item này với data cũ)
+    await this.cache.del(this.getUserListKey(data.userId));
+  }
   
   return data;
 }
 
 async evict(applicationId: string): Promise<void> {
-  const cached = await this.cache.get(this.getApplicationKey(applicationId));
+  const [useCache] = await this.getFlags();
+  if (!useCache) return;
+
+  const cached = await this.cache.get<ApplicationView>(this.getApplicationKey(applicationId));
   if (cached) {
     await this.cache.del(this.getApplicationKey(applicationId));
     await this.cache.del(this.getUserListKey(cached.userId));
+  } else {
+    await this.cache.del(this.getApplicationKey(applicationId));
   }
 }
 ```
 
 **Invalidation Triggers:**
-- Worker completes job → `refresh()`
-- Manual refresh → `POST /read/applications/:id/refresh`
-- TTL expires → auto-eviction (60s)
+
+| Trigger | Khi nào | Method |
+|---------|---------|--------|
+| **Worker completes** | Background job xong | `refresh()` |
+| **Manual refresh** | Admin force refresh | `POST /read/applications/:id/refresh` |
+| **TTL expires** | Sau TTL seconds | Auto by Redis |
+
+**Cascade Invalidation:**
+
+Khi application `app-123` của user `user-456` thay đổi:
+- Invalidate: `application:app-123` (single item)
+- Invalidate: `application:list:user-456` (list chứa item này)
+
+Tại sao cascade? Vì list cache chứa application với data cũ, phải xóa để lần query sau fetch data mới.
+
 
 ---
 
-#### 7.5. Real-time Status Updates (SSE)
+#### 7.5. Benefits
 
-```mermaid
-sequenceDiagram
-    participant Browser
-    participant SSE as /read/applications/stream
-    participant Stream as StatusStream
-    participant Worker
-    
-    Browser->>SSE: GET (EventSource)
-    SSE->>Stream: Subscribe
-    SSE-->>Browser: 200 OK (connection open)
-    
-    Note over Browser: Listening...
-    
-    Worker->>Worker: Job complete
-    Worker->>Stream: emit(StatusEvent)
-    Stream->>SSE: Event
-    SSE->>Browser: data: {...}
-    
-    Note over Browser: ✅ UI updates!
-```
+**Cache-Aside Pattern:**
+- ✅ **Significantly faster reads**: Cache hits avoid database queries
+- ✅ **Reduced DB load**: Majority of queries served from cache
+- ✅ **Graceful degradation**: System works even if Redis fails
+- ✅ **TTL-based expiration**: Auto cleanup stale data
+- ✅ **Feature flag controlled**: Can enable/disable via `cache-aside` flag
+- ✅ **Horizontal scalability**: Redis can scale independently
 
-**Backend:**
+**CQRS-lite Pattern:**
+- ✅ **Read/write separation**: Optimize independently for each use case
+- ✅ **Denormalized read model**: No JOINs → simpler queries
+- ✅ **Auto-sync VIEW**: Automatically reflects changes from write model
+- ✅ **Fallback strategy**: Works during migrations when VIEW not available
+- ✅ **No Prisma model needed**: Query with `$queryRaw` for flexibility
+- ✅ **Feature flag controlled**: Can enable/disable via `cqrs-lite` flag
 
-```typescript
-// status-updates.gateway.ts
-@Injectable()
-export class ApplicationStatusStream {
-  private readonly subject = new Subject<StatusEvent>();
-
-  emit(event: StatusEvent) {
-    this.subject.next(event);
-  }
-
-  stream(): Observable<StatusEvent> {
-    return this.subject.asObservable();
-  }
-}
-
-// read.controller.ts
-@Sse('applications/stream')
-stream(): Observable<MessageEvent> {
-  return this.statusStream.stream().pipe(
-    map((event) => ({ data: event }))
-  );
-}
-```
-
-**Frontend:**
-
-```typescript
-useEffect(() => {
-  const eventSource = new EventSource('/read/applications/stream');
-  
-  eventSource.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    if (data.applicationId === currentAppId) {
-      setStatus(data.status);
-      setProgress(data.progress);
-    }
-  };
-  
-  return () => eventSource.close();
-}, [currentAppId]);
-```
-
----
-
-
-#### 7.6. Benefits
-
-**Cache-Aside:**
-- ✅ 40x faster reads (3ms vs 120ms)
-- ✅ 87% cache hit rate
-- ✅ 87% DB load reduction
-- ✅ Graceful degradation
-
-**CQRS-lite:**
-- ✅ Read/write separation
-- ✅ Fallback to source table
-- ✅ Migration-safe
-- ✅ Feature flag controlled
-
-**Real-time SSE:**
-- ✅ <1s update latency (vs 5-30s polling)
-- ✅ Single connection (vs constant requests)
-- ✅ Native browser support
-- ✅ Auto-reconnection
-
+**Combined Benefits:**
+- ✅ **3-tier fallback**: Redis → application_view → Application
+- ✅ **High availability**: Multiple fallback levels ensure uptime
+- ✅ **Improved scalability**: Cache and read model reduce DB bottleneck
+- ✅ **Flexible deployment**: Can enable/disable patterns via feature flag
 ---
 
 
@@ -1888,17 +1936,7 @@ gantt
     Client gets response          :milestone, after b1, 0ms
 ```
 
-### Performance Metrics
 
-| Metric | Before Patterns | After Patterns | Improvement |
-|--------|----------------|----------------|-------------|
-| **Client Response Time** | 5-15 seconds | <500ms | **🚀 30x faster** |
-| **Throughput** | 1-2 req/s | 100+ req/s | **🚀 50x more** |
-| **Error Rate** | 15-20% | <1% | **✅ 20x better** |
-| **Availability** | 95% | 99.9% | **✅ Higher SLA** |
-| **Resource Utilization** | 80% idle | 60-70% active | **✅ More efficient** |
-
----
 
 ## Tổng Kết
 
