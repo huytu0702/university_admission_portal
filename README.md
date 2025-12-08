@@ -1742,22 +1742,6 @@ graph TB
 
 **Read Model:** `application_view` (PostgreSQL VIEW)
 
-```sql
-CREATE OR REPLACE VIEW application_view AS
-SELECT 
-  id,
-  "userId",
-  status,
-  progress,
-  "createdAt",
-  "updatedAt"
-FROM "Application";
-
--- Index trên bảng gốc (không thể tạo index trên VIEW)
-CREATE INDEX IF NOT EXISTS "Application_userId_idx" ON "Application"("userId");
-CREATE INDEX IF NOT EXISTS "Application_updatedAt_idx" ON "Application"("updatedAt" DESC);
-```
-
 **Đặc điểm:**
 - ✅ **Denormalized**: Không có JOIN → query nhanh hơn
 - ✅ **Auto-sync**: VIEW tự động reflect changes từ `Application` table
@@ -1840,61 +1824,35 @@ sequenceDiagram
     Note over ReadService: ✅ Next read: fresh data
 ```
 
-**Implementation:**
-
-```typescript
-async refresh(applicationId: string): Promise<ApplicationView> {
-  const [useCache, useView] = await this.getFlags();
-  
-  // Fetch latest data from DB
-  const data = await this.viewService.getView(applicationId, useView);
-  if (!data) {
-    throw new NotFoundException(`Application ${applicationId} not found`);
-  }
-  
-  if (useCache) {
-    // Update single item cache
-    await this.cache.set(this.getApplicationKey(applicationId), data, APPLICATION_CACHE_TTL);
-    
-    // ✅ Cascade invalidation: Delete list cache
-    // (vì list chứa item này với data cũ)
-    await this.cache.del(this.getUserListKey(data.userId));
-  }
-  
-  return data;
-}
-
-async evict(applicationId: string): Promise<void> {
-  const [useCache] = await this.getFlags();
-  if (!useCache) return;
-
-  const cached = await this.cache.get<ApplicationView>(this.getApplicationKey(applicationId));
-  if (cached) {
-    await this.cache.del(this.getApplicationKey(applicationId));
-    await this.cache.del(this.getUserListKey(cached.userId));
-  } else {
-    await this.cache.del(this.getApplicationKey(applicationId));
-  }
-}
-```
-
 **Invalidation Triggers:**
 
 | Trigger | Khi nào | Method |
 |---------|---------|--------|
 | **Worker completes** | Background job xong | `refresh()` |
-| **Manual refresh** | Admin force refresh | `POST /read/applications/:id/refresh` |
 | **TTL expires** | Sau TTL seconds | Auto by Redis |
 
-**Cascade Invalidation:**
 
-Khi application `app-123` của user `user-456` thay đổi:
-- Invalidate: `application:app-123` (single item)
-- Invalidate: `application:list:user-456` (list chứa item này)
+---
 
-Tại sao cascade? Vì list cache chứa application với data cũ, phải xóa để lần query sau fetch data mới.
+#### 7.5. Benefits
 
+**Cache-Aside Pattern:**
+- ✅ **Significantly faster reads**: Cache hits avoid database queries
+- ✅ **Reduced DB load**: Majority of queries served from cache
+- ✅ **Graceful degradation**: System works even if Redis fails
+- ✅ **TTL-based expiration**: Auto cleanup stale data
 
+**CQRS-lite Pattern:**
+- ✅ **Read/write separation**: Optimize independently for each use case
+- ✅ **Denormalized read model**: No JOINs → simpler queries
+- ✅ **Auto-sync VIEW**: Automatically reflects changes from write model
+- ✅ **Fallback strategy**: Works during migrations when VIEW not available
+
+**Combined Benefits:**
+- ✅ **3-tier fallback**: Redis → application_view → Application
+- ✅ **High availability**: Multiple fallback levels ensure uptime
+- ✅ **Improved scalability**: Cache and read model reduce DB bottleneck
+---
 ---
 
 #### 7.5. Benefits
