@@ -1707,16 +1707,16 @@ CQRS-lite tách biệt **read model** và **write model** để tối ưu riêng
 graph TB
     subgraph "Write Model (Command)"
         Write[Write Operations<br/>POST /applications]
-        WriteDB[("Application" table<br/>Normalized, có JOIN)]
+        WriteDB[("Application" Table<br/>Write-optimized, normalized)]
     end
     
     subgraph "Read Model (Query)"
         Read[Read Operations<br/>GET /read/applications]
-        ReadView[("application_view"<br/>Denormalized, no JOIN)]
+        ReadView[("application_view"<br/>Read model<br/>Denormalized, no JOIN)]
     end
     
-    subgraph "Sync Mechanism"
-        ViewSync["CREATE OR REPLACE VIEW<br/>(auto-sync)"]
+    subgraph "Database-managed Sync"
+        ViewSync["View-based Projection<br/>Auto-reflects data changes"]
     end
     
     Write --> WriteDB
@@ -1728,6 +1728,7 @@ graph TB
     style WriteDB fill:#FFB6C1
     style ReadView fill:#90EE90
     style ViewSync fill:#FFD700
+
 ```
 
 **Read Model:** `application_view` (PostgreSQL VIEW)
