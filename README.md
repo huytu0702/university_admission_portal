@@ -767,13 +767,6 @@ async createApplication(userId: string, dto: CreateApplicationDto) {
       },
     });
 
-    await tx.outbox.create({
-      data: {
-        eventType: 'application_submitted',
-        payload: JSON.stringify({ applicationId: newApp.id }),
-      },
-    });
-
     return newApp;
   });
 
